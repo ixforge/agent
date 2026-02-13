@@ -9,7 +9,6 @@ use tokio::time::{sleep, Duration};
 use tracing::{error, info, warn};
 
 use ixforge_agent::bird::manager::BirdManager;
-use ixforge_agent::bird::parser::BgpState;
 use ixforge_agent::bird::socket::BirdSocketClient;
 use ixforge_agent::config::AgentConfig;
 use ixforge_agent::core_client::{
@@ -24,6 +23,36 @@ struct Cli {
     /// Path to configuration file
     #[arg(short, long, default_value = "/etc/ixforge-agent/config.toml")]
     config: String,
+}
+
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut sigterm = signal(SignalKind::terminate())
+            .expect("failed to install SIGTERM handler");
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => {
+                if let Err(e) = result {
+                    error!(error = %e, "failed to listen for SIGINT");
+                    return;
+                }
+                info!("received SIGINT, shutting down");
+            }
+            _ = sigterm.recv() => {
+                info!("received SIGTERM, shutting down");
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        if let Err(e) = tokio::signal::ctrl_c().await {
+            error!(error = %e, "failed to listen for ctrl-c");
+            return;
+        }
+        info!("received ctrl-c, shutting down");
+    }
 }
 
 #[tokio::main]
@@ -100,6 +129,8 @@ async fn main() {
     });
 
     let interval = Duration::from_secs(config.core.poll_interval_secs);
+    let shutdown = shutdown_signal();
+    tokio::pin!(shutdown);
 
     info!("entering main polling loop");
 
@@ -144,6 +175,7 @@ async fn main() {
                             match bird_manager.apply_config().await {
                                 Ok(()) => {
                                     state.current_config_hash = config_resp.config_hash.clone();
+                                    metrics.set_config_applied(&config_resp.config_hash);
 
                                     let applied = ConfigApplied {
                                         config_hash: config_resp.config_hash,
@@ -201,11 +233,7 @@ async fn main() {
                     }
                 }
 
-                // Update metrics
-                let up_count = protocols.iter().filter(|p| p.state == BgpState::Up).count();
-                metrics.bgp_sessions_up.set(up_count as i64);
-                metrics.bgp_sessions_total.set(protocols.len() as i64);
-
+                metrics.update_bgp_peers(&protocols);
                 state.last_protocols = protocols;
             }
             Err(e) => {
@@ -243,6 +271,14 @@ async fn main() {
             }
         }
 
-        sleep(interval).await;
+        // Wait for next poll cycle or shutdown signal
+        tokio::select! {
+            _ = sleep(interval) => {}
+            _ = &mut shutdown => {
+                break;
+            }
+        }
     }
+
+    info!("ixforge-agent stopped");
 }
