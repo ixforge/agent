@@ -6,7 +6,6 @@ pub struct AgentState {
     pub current_config_hash: String,
     pub started_at: Instant,
     pub last_protocols: Vec<BirdProtocol>,
-    pub poll_errors: u64,
 }
 
 impl AgentState {
@@ -15,7 +14,6 @@ impl AgentState {
             current_config_hash: String::new(),
             started_at: Instant::now(),
             last_protocols: Vec::new(),
-            poll_errors: 0,
         }
     }
 

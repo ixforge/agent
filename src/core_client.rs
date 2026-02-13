@@ -71,9 +71,9 @@ pub struct CoreErrorResponse {
 
 // --- HTTP Client ---
 
+use crate::error::AgentError;
 use std::sync::atomic::{AtomicBool, Ordering};
 use uuid::Uuid;
-use crate::error::AgentError;
 
 pub struct CoreClient {
     http: reqwest::Client,
@@ -102,8 +102,7 @@ impl CoreClient {
             .timeout(std::time::Duration::from_secs(30));
 
         if let Some(ca_path) = ca_cert_path {
-            let ca_bytes = std::fs::read(ca_path)
-                .map_err(|e| AgentError::io(ca_path, e))?;
+            let ca_bytes = std::fs::read(ca_path).map_err(|e| AgentError::io(ca_path, e))?;
             let cert = reqwest::Certificate::from_pem(&ca_bytes)
                 .map_err(|e| AgentError::Config(format!("invalid CA certificate: {e}")))?;
             builder = builder.add_root_certificate(cert);
@@ -135,7 +134,8 @@ impl CoreClient {
     pub async fn get_config(&self) -> Result<ConfigResponse, AgentError> {
         self.last_poll_ok.store(false, Ordering::Relaxed);
         let resp = self.http.get(self.agent_url("/config")).send().await?;
-        self.last_poll_ok.store(resp.status().is_success(), Ordering::Relaxed);
+        self.last_poll_ok
+            .store(resp.status().is_success(), Ordering::Relaxed);
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
@@ -145,7 +145,12 @@ impl CoreClient {
     }
 
     pub async fn report_status(&self, report: &StatusReport) -> Result<StatusResponse, AgentError> {
-        let resp = self.http.post(self.agent_url("/status")).json(report).send().await?;
+        let resp = self
+            .http
+            .post(self.agent_url("/status"))
+            .json(report)
+            .send()
+            .await?;
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
@@ -154,7 +159,10 @@ impl CoreClient {
         resp.json().await.map_err(AgentError::Http)
     }
 
-    pub async fn send_heartbeat(&self, heartbeat: &Heartbeat) -> Result<HeartbeatResponse, AgentError> {
+    pub async fn send_heartbeat(
+        &self,
+        heartbeat: &Heartbeat,
+    ) -> Result<HeartbeatResponse, AgentError> {
         let (response, _) = self.send_heartbeat_with_headers(heartbeat).await?;
         Ok(response)
     }
@@ -163,7 +171,12 @@ impl CoreClient {
         &self,
         heartbeat: &Heartbeat,
     ) -> Result<(HeartbeatResponse, Option<String>), AgentError> {
-        let resp = self.http.post(self.agent_url("/heartbeat")).json(heartbeat).send().await?;
+        let resp = self
+            .http
+            .post(self.agent_url("/heartbeat"))
+            .json(heartbeat)
+            .send()
+            .await?;
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
@@ -179,7 +192,12 @@ impl CoreClient {
     }
 
     pub async fn confirm_config_applied(&self, body: &ConfigApplied) -> Result<(), AgentError> {
-        let resp = self.http.post(self.agent_url("/config/applied")).json(body).send().await?;
+        let resp = self
+            .http
+            .post(self.agent_url("/config/applied"))
+            .json(body)
+            .send()
+            .await?;
         if !resp.status().is_success() {
             let status = resp.status();
             let body_text = resp.text().await.unwrap_or_default();
