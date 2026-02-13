@@ -75,8 +75,14 @@ async fn test_report_status_success() {
     let client = make_client(&server.uri());
     let report = StatusReport {
         sessions: vec![
-            BgpSessionState { peer_ip: "10.0.0.1".into(), oper_state: "up".into() },
-            BgpSessionState { peer_ip: "10.0.0.2".into(), oper_state: "down".into() },
+            BgpSessionState {
+                peer_ip: "10.0.0.1".into(),
+                oper_state: "up".into(),
+            },
+            BgpSessionState {
+                peer_ip: "10.0.0.2".into(),
+                oper_state: "down".into(),
+            },
         ],
     };
     let response = client.report_status(&report).await.unwrap();
@@ -88,7 +94,9 @@ async fn test_report_status_success() {
 async fn test_heartbeat_success() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path(format!("/api/v1/route-servers/{RS_ID}/agent/heartbeat")))
+        .and(path(format!(
+            "/api/v1/route-servers/{RS_ID}/agent/heartbeat"
+        )))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "acknowledged": true, "config_hash_match": true
         })))
@@ -105,7 +113,9 @@ async fn test_heartbeat_success() {
 async fn test_heartbeat_upgrade_header() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path(format!("/api/v1/route-servers/{RS_ID}/agent/heartbeat")))
+        .and(path(format!(
+            "/api/v1/route-servers/{RS_ID}/agent/heartbeat"
+        )))
         .respond_with(
             ResponseTemplate::new(200)
                 .insert_header("X-IXForge-Agent-Upgrade", "0.2.0")
@@ -117,7 +127,10 @@ async fn test_heartbeat_upgrade_header() {
         .await;
 
     let client = make_client(&server.uri());
-    let (response, upgrade_version) = client.send_heartbeat_with_headers(&test_heartbeat()).await.unwrap();
+    let (response, upgrade_version) = client
+        .send_heartbeat_with_headers(&test_heartbeat())
+        .await
+        .unwrap();
     assert!(response.acknowledged);
     assert!(!response.config_hash_match);
     assert_eq!(upgrade_version.as_deref(), Some("0.2.0"));
@@ -127,13 +140,17 @@ async fn test_heartbeat_upgrade_header() {
 async fn test_confirm_config_applied() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path(format!("/api/v1/route-servers/{RS_ID}/agent/config/applied")))
+        .and(path(format!(
+            "/api/v1/route-servers/{RS_ID}/agent/config/applied"
+        )))
         .respond_with(ResponseTemplate::new(204))
         .mount(&server)
         .await;
 
     let client = make_client(&server.uri());
-    let body = ConfigApplied { config_hash: "a".repeat(64) };
+    let body = ConfigApplied {
+        config_hash: "a".repeat(64),
+    };
     client.confirm_config_applied(&body).await.unwrap();
 }
 
@@ -187,7 +204,8 @@ async fn test_auth_rejected() {
         .mount(&server)
         .await;
 
-    let client = CoreClient::new(&server.uri(), "wrong-key", &RS_ID.parse().unwrap(), None).unwrap();
+    let client =
+        CoreClient::new(&server.uri(), "wrong-key", &RS_ID.parse().unwrap(), None).unwrap();
     let result = client.get_config().await;
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();

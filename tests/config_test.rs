@@ -35,6 +35,7 @@ format = "json"
     assert_eq!(config.core.poll_interval_secs, 30);
     assert_eq!(config.core.ca_cert_path, None);
     assert_eq!(config.bird.bird_binary, "/usr/sbin/bird");
+    assert_eq!(config.bird.socket_timeout_secs, 30);
     assert_eq!(config.logging.file_path, None);
 }
 
@@ -53,6 +54,7 @@ ca_cert_path = "/etc/ixforge-agent/ca.pem"
 socket_path = "/run/bird/bird.ctl"
 config_path = "/etc/bird/bird.conf"
 bird_binary = "/usr/local/sbin/bird"
+socket_timeout_secs = 15
 
 [metrics]
 listen = "127.0.0.1:9100"
@@ -66,10 +68,17 @@ file_path = "/var/log/ixforge-agent.log"
 
     let config = AgentConfig::from_file(f.path()).unwrap();
     assert_eq!(config.core.poll_interval_secs, 60);
-    assert_eq!(config.core.ca_cert_path.as_deref(), Some("/etc/ixforge-agent/ca.pem"));
+    assert_eq!(
+        config.core.ca_cert_path.as_deref(),
+        Some("/etc/ixforge-agent/ca.pem")
+    );
     assert_eq!(config.bird.bird_binary, "/usr/local/sbin/bird");
+    assert_eq!(config.bird.socket_timeout_secs, 15);
     assert_eq!(config.logging.level, "debug");
-    assert_eq!(config.logging.file_path.as_deref(), Some("/var/log/ixforge-agent.log"));
+    assert_eq!(
+        config.logging.file_path.as_deref(),
+        Some("/var/log/ixforge-agent.log")
+    );
 }
 
 #[test]

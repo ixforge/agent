@@ -8,8 +8,8 @@ use prometheus_client::metrics::counter::Counter;
 use prometheus_client::metrics::gauge::Gauge;
 use prometheus_client::registry::Registry;
 
-use crate::bird::parser::{BgpState, BirdProtocol};
 use super::system::SystemMetrics;
+use crate::bird::parser::{BgpState, BirdProtocol};
 
 /// Per-peer BGP snapshot for metrics rendering
 #[derive(Debug, Clone)]
