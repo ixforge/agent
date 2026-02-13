@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use tracing::info;
 
-use crate::bird::parser::{parse_bird_uptime, parse_protocols, BirdProtocol};
-use crate::error::AgentError;
 use super::BirdClient;
+use crate::bird::parser::{BirdProtocol, parse_bird_uptime, parse_protocols};
+use crate::error::AgentError;
 
 pub struct BirdManager<C: BirdClient> {
     client: C,
@@ -29,9 +29,12 @@ impl<C: BirdClient> BirdManager<C> {
             .arg(temp_config_path)
             .output()
             .await
-            .map_err(|e| AgentError::BirdValidation(format!(
-                "failed to run {}: {e}", self.bird_binary.display()
-            )))?;
+            .map_err(|e| {
+                AgentError::BirdValidation(format!(
+                    "failed to run {}: {e}",
+                    self.bird_binary.display()
+                ))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);

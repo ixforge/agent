@@ -1,7 +1,7 @@
 use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::*;
-use tracing_subscriber::EnvFilter;
 
 use crate::config::LoggingConfig;
 
@@ -10,8 +10,7 @@ use crate::config::LoggingConfig;
 pub fn init(config: &LoggingConfig) -> Vec<WorkerGuard> {
     let mut guards = Vec::new();
 
-    let filter = EnvFilter::try_new(&config.level)
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = EnvFilter::try_new(&config.level).unwrap_or_else(|_| EnvFilter::new("info"));
 
     let is_json = config.format == "json";
 

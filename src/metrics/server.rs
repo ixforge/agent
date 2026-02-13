@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
+use axum::Router;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json};
 use axum::routing::get;
-use axum::Router;
 use serde_json::json;
 use tokio::net::TcpListener;
 

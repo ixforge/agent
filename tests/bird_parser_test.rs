@@ -1,4 +1,4 @@
-use ixforge_agent::bird::parser::{parse_bird_uptime, parse_protocols, BgpState};
+use ixforge_agent::bird::parser::{BgpState, parse_bird_uptime, parse_protocols};
 
 const BIRD_OUTPUT_MIXED: &str = r#"BIRD 2.15.1 ready.
 Name       Proto      Table    State  Since       Info
@@ -84,7 +84,10 @@ fn test_parse_active_session() {
 #[test]
 fn test_parse_ipv6_session() {
     let protocols = parse_protocols(BIRD_OUTPUT_MIXED).unwrap();
-    let p = protocols.iter().find(|p| p.name == "peer_as64502_v6").unwrap();
+    let p = protocols
+        .iter()
+        .find(|p| p.name == "peer_as64502_v6")
+        .unwrap();
     assert_eq!(p.state, BgpState::Up);
     assert_eq!(p.neighbor_address.as_deref(), Some("2001:db8::1"));
     assert_eq!(p.neighbor_asn, Some(64502));
@@ -94,7 +97,10 @@ fn test_parse_ipv6_session() {
 
 #[test]
 fn test_parse_empty_output() {
-    let protocols = parse_protocols("BIRD 2.15.1 ready.\nName       Proto      Table    State  Since       Info\n").unwrap();
+    let protocols = parse_protocols(
+        "BIRD 2.15.1 ready.\nName       Proto      Table    State  Since       Info\n",
+    )
+    .unwrap();
     assert!(protocols.is_empty());
 }
 
@@ -106,7 +112,10 @@ fn test_bgp_state_mapping() {
     assert_eq!(BgpState::from_bird_info("OpenSent"), BgpState::Down);
     assert_eq!(BgpState::from_bird_info("OpenConfirm"), BgpState::Down);
     assert_eq!(BgpState::from_bird_info("Idle"), BgpState::Down);
-    assert_eq!(BgpState::from_bird_info("SomethingWeird"), BgpState::Unknown);
+    assert_eq!(
+        BgpState::from_bird_info("SomethingWeird"),
+        BgpState::Unknown
+    );
 }
 
 #[test]
@@ -233,7 +242,10 @@ fn test_parse_bird_uptime() {
     let uptime = parse_bird_uptime(BIRD_STATUS_OUTPUT).unwrap();
     // 5 days 2 hours 30 minutes = 5*86400 + 2*3600 + 30*60 = 440999.667
     let expected = 5.0 * 86400.0 + 2.0 * 3600.0 + 30.0 * 60.0 - 0.333;
-    assert!((uptime - expected).abs() < 1.0, "expected ~{expected}, got {uptime}");
+    assert!(
+        (uptime - expected).abs() < 1.0,
+        "expected ~{expected}, got {uptime}"
+    );
 }
 
 #[test]

@@ -13,7 +13,5 @@ pub trait BirdClient: Send + Sync {
     ) -> impl std::future::Future<Output = Result<String, AgentError>> + Send;
 
     /// Check if BIRD is running and responsive
-    fn is_running(
-        &self,
-    ) -> impl std::future::Future<Output = bool> + Send;
+    fn is_running(&self) -> impl std::future::Future<Output = bool> + Send;
 }

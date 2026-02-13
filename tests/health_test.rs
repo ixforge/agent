@@ -1,5 +1,5 @@
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use serde_json::Value;
 
@@ -14,9 +14,7 @@ async fn test_health_endpoint_returns_json() {
 
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-    let resp = reqwest::get(format!("http://{addr}/health"))
-        .await
-        .unwrap();
+    let resp = reqwest::get(format!("http://{addr}/health")).await.unwrap();
     assert_eq!(resp.status(), 200);
 
     let body: Value = resp.json().await.unwrap();
@@ -94,7 +92,10 @@ async fn test_metrics_include_per_peer_bgp_and_config_info() {
         let bird_running = Arc::clone(&bird_running);
         async move {
             ixforge_agent::metrics::server::run_with_state(
-                listener, metrics, core_connected, bird_running,
+                listener,
+                metrics,
+                core_connected,
+                bird_running,
             )
             .await;
         }
@@ -169,7 +170,10 @@ async fn test_metrics_no_bgp_peers_omits_per_peer_section() {
         let bird_running = Arc::clone(&bird_running);
         async move {
             ixforge_agent::metrics::server::run_with_state(
-                listener, metrics, core_connected, bird_running,
+                listener,
+                metrics,
+                core_connected,
+                bird_running,
             )
             .await;
         }

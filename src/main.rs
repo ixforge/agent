@@ -1,11 +1,11 @@
 use std::path::Path;
 use std::process;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use clap::Parser;
 use tokio::net::TcpListener;
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 use tracing::{error, info, warn};
 
 use ixforge_agent::bird::manager::BirdManager;
@@ -28,9 +28,9 @@ struct Cli {
 async fn shutdown_signal() {
     #[cfg(unix)]
     {
-        use tokio::signal::unix::{signal, SignalKind};
-        let mut sigterm = signal(SignalKind::terminate())
-            .expect("failed to install SIGTERM handler");
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut sigterm =
+            signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
         tokio::select! {
             result = tokio::signal::ctrl_c() => {
                 if let Err(e) = result {
@@ -91,7 +91,8 @@ async fn main() {
         }
     };
 
-    let bird_socket = BirdSocketClient::new(&config.bird.socket_path);
+    let bird_socket =
+        BirdSocketClient::new(&config.bird.socket_path, config.bird.socket_timeout_secs);
     let bird_manager = BirdManager::new(
         bird_socket,
         &config.bird.config_path,
@@ -148,63 +149,55 @@ async fn main() {
                     );
 
                     let temp_path = format!("{}.tmp", config.bird.config_path);
-                    match tokio::fs::write(&temp_path, &config_resp.content).await {
-                        Ok(()) => {}
-                        Err(e) => {
-                            error!(error = %e, path = %temp_path, "failed to write temp config file");
-                            state.poll_errors += 1;
-                            metrics.poll_errors_total.inc();
-                            sleep(interval).await;
-                            continue;
-                        }
-                    }
+                    if let Err(e) = tokio::fs::write(&temp_path, &config_resp.content).await {
+                        error!(error = %e, path = %temp_path, "failed to write temp config file");
+                        metrics.poll_errors_total.inc();
+                    } else {
+                        match bird_manager.validate_config(Path::new(&temp_path)).await {
+                            Ok(()) => {
+                                info!("config validation passed");
 
-                    match bird_manager.validate_config(Path::new(&temp_path)).await {
-                        Ok(()) => {
-                            info!("config validation passed");
+                                if let Err(e) =
+                                    bird_manager.write_config(&config_resp.content).await
+                                {
+                                    error!(error = %e, "failed to write config");
+                                    metrics.poll_errors_total.inc();
+                                } else {
+                                    match bird_manager.apply_config().await {
+                                        Ok(()) => {
+                                            state.current_config_hash =
+                                                config_resp.config_hash.clone();
+                                            metrics.set_config_applied(&config_resp.config_hash);
 
-                            if let Err(e) = bird_manager.write_config(&config_resp.content).await {
-                                error!(error = %e, "failed to write config");
-                                state.poll_errors += 1;
-                                metrics.poll_errors_total.inc();
-                                let _ = tokio::fs::remove_file(&temp_path).await;
-                                sleep(interval).await;
-                                continue;
-                            }
-
-                            match bird_manager.apply_config().await {
-                                Ok(()) => {
-                                    state.current_config_hash = config_resp.config_hash.clone();
-                                    metrics.set_config_applied(&config_resp.config_hash);
-
-                                    let applied = ConfigApplied {
-                                        config_hash: config_resp.config_hash,
-                                    };
-                                    if let Err(e) = core_client.confirm_config_applied(&applied).await {
-                                        warn!(error = %e, "failed to confirm config applied");
+                                            let applied = ConfigApplied {
+                                                config_hash: config_resp.config_hash,
+                                            };
+                                            if let Err(e) =
+                                                core_client.confirm_config_applied(&applied).await
+                                            {
+                                                warn!(error = %e, "failed to confirm config applied");
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!(error = %e, "failed to apply config via birdc");
+                                            metrics.poll_errors_total.inc();
+                                        }
                                     }
                                 }
-                                Err(e) => {
-                                    error!(error = %e, "failed to apply config via birdc");
-                                    state.poll_errors += 1;
-                                    metrics.poll_errors_total.inc();
-                                }
+                            }
+                            Err(e) => {
+                                error!(error = %e, "config validation failed, keeping previous config");
+                                metrics.poll_errors_total.inc();
                             }
                         }
-                        Err(e) => {
-                            error!(error = %e, "config validation failed, keeping previous config");
-                            state.poll_errors += 1;
-                            metrics.poll_errors_total.inc();
-                        }
-                    }
 
-                    let _ = tokio::fs::remove_file(&temp_path).await;
+                        let _ = tokio::fs::remove_file(&temp_path).await;
+                    }
                 }
             }
             Err(e) => {
                 warn!(error = %e, "failed to poll config from Core");
                 core_connected.store(false, Ordering::Relaxed);
-                state.poll_errors += 1;
                 metrics.poll_errors_total.inc();
             }
         }

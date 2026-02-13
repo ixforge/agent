@@ -29,6 +29,8 @@ pub struct BirdConfig {
     pub config_path: String,
     #[serde(default = "default_bird_binary")]
     pub bird_binary: String,
+    #[serde(default = "default_socket_timeout")]
+    pub socket_timeout_secs: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -53,6 +55,10 @@ fn default_bird_binary() -> String {
     "/usr/sbin/bird".to_string()
 }
 
+fn default_socket_timeout() -> u64 {
+    30
+}
+
 fn default_log_level() -> String {
     "info".to_string()
 }
@@ -63,8 +69,7 @@ fn default_log_format() -> String {
 
 impl AgentConfig {
     pub fn from_file(path: &Path) -> Result<Self, AgentError> {
-        let content =
-            std::fs::read_to_string(path).map_err(|e| AgentError::io(path, e))?;
+        let content = std::fs::read_to_string(path).map_err(|e| AgentError::io(path, e))?;
         let config: AgentConfig =
             toml::from_str(&content).map_err(|e| AgentError::Config(e.to_string()))?;
         config.validate()?;
