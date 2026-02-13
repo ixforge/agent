@@ -17,11 +17,11 @@
 - Testing: traits for BIRD abstraction + integration with BIRD in Docker
 - BIRD comms: Unix socket for birdc, subprocess for bird -p
 - Parse: BGP state + prefixes imported/exported
-- Retry: fixed interval (no backoff)
+- Retry: fixed interval
 - Metrics: BIRD/BGP + host (cpu, memory)
 - Health: version + uptime + BIRD status + Core connectivity
 - Registration: manual UUID in config.toml
-- Config reload: restart process (no SIGHUP)
+- Config reload: restart process
 - No dry-run for v0.1
 - amd64 only for now
 

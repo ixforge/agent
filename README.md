@@ -244,6 +244,16 @@ The binary will be in `target/release/ixforge-agent`.
 cargo test
 ```
 
+### Integration Tests
+
+Runs against a real BIRD instance in Docker:
+
+```bash
+docker compose -f docker/docker-compose.test.yml up -d --build
+BIRD_SOCKET=/tmp/ixforge-bird-test/bird.ctl cargo test --test integration_test -- --ignored
+docker compose -f docker/docker-compose.test.yml down
+```
+
 ### Lint
 
 ```bash

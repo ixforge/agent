@@ -39,6 +39,40 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all -- --check
 
+  integration:
+    name: Integration Tests (BIRD)
+    runs-on: ubuntu-latest
+    needs: [check]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Start BIRD container
+        run: docker compose -f docker/docker-compose.test.yml up -d --build
+
+      - name: Wait for BIRD socket
+        run: |
+          for i in $(seq 1 15); do
+            if [ -S /tmp/ixforge-bird-test/bird.ctl ]; then
+              echo "BIRD socket ready"
+              exit 0
+            fi
+            echo "Waiting for BIRD socket... ($i/15)"
+            sleep 1
+          done
+          echo "BIRD socket not found after 15s"
+          exit 1
+
+      - name: Run integration tests
+        env:
+          BIRD_SOCKET: /tmp/ixforge-bird-test/bird.ctl
+        run: cargo test --test integration_test -- --ignored
+
+      - name: Stop BIRD container
+        if: always()
+        run: docker compose -f docker/docker-compose.test.yml down
+
   build:
     name: Build (linux/amd64)
     runs-on: ubuntu-latest
