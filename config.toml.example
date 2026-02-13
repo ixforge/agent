@@ -1,0 +1,33 @@
+# /etc/ixforge-agent/config.toml
+
+[core]
+# URL of the IXForge Core API
+url = "https://portal.tuixp.net"
+# API key with agent:route_server scope
+api_key = "ixf_ag_xxxxxxxxxxxx"
+# UUID of the route server this agent manages
+route_server_id = "550e8400-e29b-41d4-a716-446655440000"
+# Polling interval in seconds
+poll_interval_secs = 30
+# Optional: path to CA certificate bundle for custom/internal CAs
+# ca_cert_path = "/etc/ixforge-agent/ca.pem"
+
+[bird]
+# Path to the BIRD 2 control socket
+socket_path = "/run/bird/bird.ctl"
+# Path to the BIRD configuration file (agent writes here)
+config_path = "/etc/bird/bird.conf"
+# Path to the bird binary (for config validation with bird -p)
+bird_binary = "/usr/sbin/bird"
+
+[metrics]
+# Listen address for Prometheus metrics and health endpoint
+listen = "0.0.0.0:9100"
+
+[logging]
+# Log level: trace, debug, info, warn, error
+level = "info"
+# Log format: json or text
+format = "json"
+# Optional: log to file in addition to stdout
+# file_path = "/var/log/ixforge-agent.log"

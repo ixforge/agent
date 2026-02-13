@@ -1,0 +1,24 @@
+[Unit]
+Description=IXForge Route Server Agent
+Documentation=https://github.com/ixforge/agent
+After=network-online.target bird.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/ixforge-agent --config /etc/ixforge-agent/config.toml
+Restart=always
+RestartSec=5
+User=root
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/etc/bird
+# Uncomment if logging.file_path is configured:
+# ReadWritePaths=/etc/bird /var/log
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
