@@ -1,0 +1,7 @@
+services:
+  bird:
+    build:
+      context: ./bird
+    volumes:
+      - ${BIRD_SOCKET_DIR:-/tmp/ixforge-bird-test}:/run/bird
+    privileged: true
