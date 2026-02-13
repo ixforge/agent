@@ -1,4 +1,4 @@
-use ixforge_agent::bird::parser::{parse_protocols, BgpState};
+use ixforge_agent::bird::parser::{parse_bird_uptime, parse_protocols, BgpState};
 
 const BIRD_OUTPUT_MIXED: &str = r#"BIRD 2.15.1 ready.
 Name       Proto      Table    State  Since       Info
@@ -217,4 +217,50 @@ fn test_parse_various_down_states() {
     let protocols = parse_protocols(BIRD_OUTPUT_CONNECT_STATES).unwrap();
     assert_eq!(protocols.len(), 3);
     assert!(protocols.iter().all(|p| p.state == BgpState::Down));
+}
+
+const BIRD_STATUS_OUTPUT: &str = r#"BIRD 2.15.1 ready.
+Router ID is 10.0.0.254
+Hostname is rs1
+Current server time is 2024-01-15 10:30:00.123
+Last reboot on 2024-01-10 08:00:00.456
+Last reconfiguration on 2024-01-15 09:00:00.789
+Daemon is up and running
+"#;
+
+#[test]
+fn test_parse_bird_uptime() {
+    let uptime = parse_bird_uptime(BIRD_STATUS_OUTPUT).unwrap();
+    // 5 days 2 hours 30 minutes = 5*86400 + 2*3600 + 30*60 = 440999.667
+    let expected = 5.0 * 86400.0 + 2.0 * 3600.0 + 30.0 * 60.0 - 0.333;
+    assert!((uptime - expected).abs() < 1.0, "expected ~{expected}, got {uptime}");
+}
+
+#[test]
+fn test_parse_bird_uptime_no_fractional_seconds() {
+    let output = "Current server time is 2024-01-15 10:30:00\nLast reboot on 2024-01-15 10:00:00\n";
+    let uptime = parse_bird_uptime(output).unwrap();
+    assert!((uptime - 1800.0).abs() < 0.01);
+}
+
+#[test]
+fn test_parse_bird_uptime_missing_reboot() {
+    let output = "Current server time is 2024-01-15 10:30:00\n";
+    assert!(parse_bird_uptime(output).is_none());
+}
+
+// Raw socket output from `show status` (with protocol codes)
+const BIRD_STATUS_RAW_SOCKET: &str = "\
+1000-BIRD 2.15.1 ready.
+1011-Router ID is 10.0.0.254
+1011-Hostname is rs1
+1011-Current server time is 2024-01-15 10:30:00.000
+1011-Last reboot on 2024-01-15 10:00:00.000
+1011-Last reconfiguration on 2024-01-15 10:15:00.000
+0013 Daemon is up and running\n";
+
+#[test]
+fn test_parse_bird_uptime_raw_socket() {
+    let uptime = parse_bird_uptime(BIRD_STATUS_RAW_SOCKET).unwrap();
+    assert!((uptime - 1800.0).abs() < 0.01);
 }

@@ -1,3 +1,5 @@
+use chrono::NaiveDateTime;
+
 use crate::error::AgentError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -178,4 +180,42 @@ impl ProtocolBuilder {
             prefixes_exported: self.prefixes_exported,
         })
     }
+}
+
+/// Parse BIRD uptime in seconds from `show status` output.
+/// Looks for "Last reboot on <timestamp>" and "Current server time is <timestamp>",
+/// calculates the difference
+pub fn parse_bird_uptime(output: &str) -> Option<f64> {
+    let mut current_time: Option<NaiveDateTime> = None;
+    let mut reboot_time: Option<NaiveDateTime> = None;
+
+    for raw_line in output.lines() {
+        let line = match strip_protocol_code(raw_line) {
+            Some(l) => l.trim(),
+            None => continue,
+        };
+
+        if let Some(ts) = line.strip_prefix("Current server time is ") {
+            current_time = parse_bird_timestamp(ts);
+        } else if let Some(ts) = line.strip_prefix("Last reboot on ") {
+            reboot_time = parse_bird_timestamp(ts);
+        }
+    }
+
+    match (current_time, reboot_time) {
+        (Some(now), Some(boot)) => {
+            let diff = now.signed_duration_since(boot);
+            Some(diff.num_milliseconds() as f64 / 1000.0)
+        }
+        _ => None,
+    }
+}
+
+/// Parse a BIRD timestamp like "2024-01-15 10:30:00.123"
+/// Handles both with and without fractional seconds
+fn parse_bird_timestamp(s: &str) -> Option<NaiveDateTime> {
+    let s = s.trim();
+    NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f")
+        .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S"))
+        .ok()
 }

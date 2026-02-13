@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use tracing::info;
 
-use crate::bird::parser::{parse_protocols, BirdProtocol};
+use crate::bird::parser::{parse_bird_uptime, parse_protocols, BirdProtocol};
 use crate::error::AgentError;
 use super::BirdClient;
 
@@ -63,6 +63,12 @@ impl<C: BirdClient> BirdManager<C> {
     pub async fn get_protocols(&self) -> Result<Vec<BirdProtocol>, AgentError> {
         let output = self.client.send_command("show protocols all").await?;
         parse_protocols(&output)
+    }
+
+    /// Get BIRD uptime in seconds by parsing `show status` output
+    pub async fn get_uptime(&self) -> Option<f64> {
+        let output = self.client.send_command("show status").await.ok()?;
+        parse_bird_uptime(&output)
     }
 
     /// Check if BIRD is running

@@ -180,6 +180,7 @@ async fn main() {
         // --- Step 2: BGP status reporting ---
         let bird_is_running = bird_manager.is_running().await;
         bird_running_flag.store(bird_is_running, Ordering::Relaxed);
+        let bird_uptime = bird_manager.get_uptime().await;
 
         match bird_manager.get_protocols().await {
             Ok(protocols) => {
@@ -224,7 +225,7 @@ async fn main() {
             bird_instances: vec![BirdInstanceStatus {
                 name: "bird".to_string(),
                 running: bird_is_running,
-                uptime_seconds: None,
+                uptime_seconds: bird_uptime,
             }],
         };
 
