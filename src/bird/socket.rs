@@ -67,7 +67,7 @@ impl BirdSocketClient {
             .await
             .map_err(|e| AgentError::BirdSocket(format!("failed to send command: {e}")))?;
 
-        // Read the full response
+        // Read the full response, checking only the tail for the end marker
         let mut response = String::new();
         let mut buf = vec![0u8; 8192];
         loop {
@@ -78,10 +78,12 @@ impl BirdSocketClient {
             if n == 0 {
                 break;
             }
+            let chunk_start = response.len();
             response.push_str(&String::from_utf8_lossy(&buf[..n]));
 
-            // BIRD protocol: lines starting with a 4-digit code and space (not '-') indicate end
-            if response.lines().last().is_some_and(|line| {
+            // Only scan the new chunk for the BIRD end-of-response marker
+            // (4-digit code followed by space, not '-')
+            if response[chunk_start..].lines().last().is_some_and(|line| {
                 line.len() >= 5
                     && line.as_bytes()[4] == b' '
                     && line[..4].chars().all(|c| c.is_ascii_digit())

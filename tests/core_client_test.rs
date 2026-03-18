@@ -41,7 +41,6 @@ async fn test_get_config_success() {
     let config = client.get_config().await.unwrap();
     assert_eq!(config.config_hash, "abc123");
     assert_eq!(config.content, "router id 10.0.0.1;");
-    assert!(client.last_poll_ok());
 }
 
 #[tokio::test]
@@ -104,7 +103,7 @@ async fn test_heartbeat_success() {
         .await;
 
     let client = make_client(&server.uri());
-    let response = client.send_heartbeat(&test_heartbeat()).await.unwrap();
+    let (response, _) = client.send_heartbeat_with_headers(&test_heartbeat()).await.unwrap();
     assert!(response.acknowledged);
     assert!(response.config_hash_match);
 }
@@ -159,38 +158,6 @@ async fn test_core_unreachable() {
     let client = make_client("http://127.0.0.1:1");
     let result = client.get_config().await;
     assert!(result.is_err());
-}
-
-#[tokio::test]
-async fn test_last_poll_ok_resets_on_failure() {
-    let server = MockServer::start().await;
-    let config_path = format!("/api/v1/route-servers/{RS_ID}/agent/config");
-
-    // Step 1: successful poll
-    let guard = Mock::given(method("GET"))
-        .and(path(&config_path))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "config_hash": "abc123",
-            "content": "router id 10.0.0.1;",
-            "generated_at": "2024-01-15T00:00:00Z"
-        })))
-        .mount_as_scoped(&server)
-        .await;
-
-    let client = make_client(&server.uri());
-    let _ = client.get_config().await.unwrap();
-    assert!(client.last_poll_ok(), "should be true after success");
-
-    // Step 2: drop success mock, mount 500 error
-    drop(guard);
-    Mock::given(method("GET"))
-        .and(path(&config_path))
-        .respond_with(ResponseTemplate::new(500))
-        .mount(&server)
-        .await;
-
-    let _ = client.get_config().await;
-    assert!(!client.last_poll_ok(), "should be false after failure");
 }
 
 #[tokio::test]

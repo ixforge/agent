@@ -85,8 +85,4 @@ impl<C: BirdClient> BirdManager<C> {
             .await
             .map_err(|e| AgentError::io(&self.config_path, e))
     }
-
-    pub fn config_path(&self) -> &Path {
-        &self.config_path
-    }
 }

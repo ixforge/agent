@@ -72,14 +72,12 @@ pub struct CoreErrorResponse {
 // --- HTTP Client ---
 
 use crate::error::AgentError;
-use std::sync::atomic::{AtomicBool, Ordering};
 use uuid::Uuid;
 
 pub struct CoreClient {
     http: reqwest::Client,
     base_url: String,
     route_server_id: Uuid,
-    last_poll_ok: AtomicBool,
 }
 
 impl CoreClient {
@@ -116,12 +114,7 @@ impl CoreClient {
             http,
             base_url: base_url.trim_end_matches('/').to_string(),
             route_server_id: *route_server_id,
-            last_poll_ok: AtomicBool::new(false),
         })
-    }
-
-    pub fn last_poll_ok(&self) -> bool {
-        self.last_poll_ok.load(Ordering::Relaxed)
     }
 
     fn agent_url(&self, suffix: &str) -> String {
@@ -132,10 +125,7 @@ impl CoreClient {
     }
 
     pub async fn get_config(&self) -> Result<ConfigResponse, AgentError> {
-        self.last_poll_ok.store(false, Ordering::Relaxed);
         let resp = self.http.get(self.agent_url("/config")).send().await?;
-        self.last_poll_ok
-            .store(resp.status().is_success(), Ordering::Relaxed);
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
@@ -157,14 +147,6 @@ impl CoreClient {
             return Err(AgentError::CoreApi(format!("{status}: {body}")));
         }
         resp.json().await.map_err(AgentError::Http)
-    }
-
-    pub async fn send_heartbeat(
-        &self,
-        heartbeat: &Heartbeat,
-    ) -> Result<HeartbeatResponse, AgentError> {
-        let (response, _) = self.send_heartbeat_with_headers(heartbeat).await?;
-        Ok(response)
     }
 
     pub async fn send_heartbeat_with_headers(

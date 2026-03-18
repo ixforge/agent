@@ -29,8 +29,13 @@ async fn shutdown_signal() {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{SignalKind, signal};
-        let mut sigterm =
-            signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
+        let mut sigterm = match signal(SignalKind::terminate()) {
+            Ok(s) => s,
+            Err(e) => {
+                error!(error = %e, "failed to install SIGTERM handler");
+                process::exit(1);
+            }
+        };
         tokio::select! {
             result = tokio::signal::ctrl_c() => {
                 if let Err(e) = result {
