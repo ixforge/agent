@@ -56,10 +56,10 @@ pub async fn run_with_listener(listener: TcpListener) {
 
     let app = build_router(state);
 
-    tracing::info!(
-        addr = %listener.local_addr().unwrap(),
-        "metrics server listening"
-    );
+    match listener.local_addr() {
+        Ok(addr) => tracing::info!(addr = %addr, "metrics server listening"),
+        Err(e) => tracing::warn!(error = %e, "could not resolve listener address"),
+    }
 
     axum::serve(listener, app).await.unwrap_or_else(|e| {
         tracing::error!(error = %e, "metrics server error");
@@ -81,10 +81,10 @@ pub async fn run_with_state(
 
     let app = build_router(state);
 
-    tracing::info!(
-        addr = %listener.local_addr().unwrap(),
-        "metrics server listening"
-    );
+    match listener.local_addr() {
+        Ok(addr) => tracing::info!(addr = %addr, "metrics server listening"),
+        Err(e) => tracing::warn!(error = %e, "could not resolve listener address"),
+    }
 
     axum::serve(listener, app).await.unwrap_or_else(|e| {
         tracing::error!(error = %e, "metrics server error");

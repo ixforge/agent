@@ -125,12 +125,12 @@ impl MetricsRegistry {
         self.bgp_sessions_up.set(up_count as i64);
         self.bgp_sessions_total.set(peers.len() as i64);
 
-        *self.bgp_peers.lock().unwrap() = peers;
+        *self.bgp_peers.lock().unwrap_or_else(|e| e.into_inner()) = peers;
     }
 
     /// Record a successful config application
     pub fn set_config_applied(&self, hash: &str) {
-        *self.config_hash.lock().unwrap() = hash.to_string();
+        *self.config_hash.lock().unwrap_or_else(|e| e.into_inner()) = hash.to_string();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -160,7 +160,7 @@ impl MetricsRegistry {
     }
 
     fn encode_bgp_peers(&self, buf: &mut String) {
-        let peers = self.bgp_peers.lock().unwrap();
+        let peers = self.bgp_peers.lock().unwrap_or_else(|e| e.into_inner());
         if peers.is_empty() {
             return;
         }
@@ -212,7 +212,7 @@ impl MetricsRegistry {
     }
 
     fn encode_config_info(&self, buf: &mut String) {
-        let hash = self.config_hash.lock().unwrap();
+        let hash = self.config_hash.lock().unwrap_or_else(|e| e.into_inner());
         if hash.is_empty() {
             return;
         }
