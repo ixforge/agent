@@ -90,6 +90,21 @@ impl AgentConfig {
                 "core.api_key cannot be empty".to_string(),
             ));
         }
+        if self.bird.socket_path.is_empty() {
+            return Err(AgentError::Config(
+                "bird.socket_path cannot be empty".to_string(),
+            ));
+        }
+        if self.bird.config_path.is_empty() {
+            return Err(AgentError::Config(
+                "bird.config_path cannot be empty".to_string(),
+            ));
+        }
+        if self.bird.bird_binary.is_empty() {
+            return Err(AgentError::Config(
+                "bird.bird_binary cannot be empty".to_string(),
+            ));
+        }
         Ok(())
     }
 }

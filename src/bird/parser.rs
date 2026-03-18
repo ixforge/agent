@@ -182,7 +182,7 @@ impl ProtocolBuilder {
     }
 }
 
-/// Parse BIRD uptime in seconds from `show status` output.
+/// Parse BIRD uptime in seconds from `show status` output
 /// Looks for "Last reboot on <timestamp>" and "Current server time is <timestamp>",
 /// calculates the difference
 pub fn parse_bird_uptime(output: &str) -> Option<f64> {
