@@ -220,6 +220,7 @@ async fn main() {
                         p.neighbor_address.as_ref().map(|addr| BgpSessionState {
                             peer_ip: addr.clone(),
                             oper_state: p.state.as_oper_state().to_string(),
+                            af: if addr.contains(':') { 6 } else { 4 },
                         })
                     })
                     .collect();
