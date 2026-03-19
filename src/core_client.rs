@@ -29,6 +29,7 @@ pub struct HeartbeatResponse {
 pub struct BgpSessionState {
     pub peer_ip: String,
     pub oper_state: String,
+    pub af: u8,
 }
 
 #[derive(Debug, Clone, Serialize)]

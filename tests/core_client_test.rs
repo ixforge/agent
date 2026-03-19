@@ -77,10 +77,12 @@ async fn test_report_status_success() {
             BgpSessionState {
                 peer_ip: "10.0.0.1".into(),
                 oper_state: "up".into(),
+                af: 4,
             },
             BgpSessionState {
                 peer_ip: "10.0.0.2".into(),
                 oper_state: "down".into(),
+                af: 4,
             },
         ],
     };
