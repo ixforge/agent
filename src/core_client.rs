@@ -84,7 +84,7 @@ pub struct CoreClient {
 impl CoreClient {
     pub fn new(
         base_url: &str,
-        api_key: &str,
+        api_key: &crate::config::Secret,
         route_server_id: &Uuid,
         ca_cert_path: Option<&str>,
     ) -> Result<Self, AgentError> {
@@ -92,6 +92,7 @@ impl CoreClient {
         headers.insert(
             "X-API-Key",
             api_key
+                .expose()
                 .parse()
                 .map_err(|_| AgentError::Config("invalid API key characters".into()))?,
         );

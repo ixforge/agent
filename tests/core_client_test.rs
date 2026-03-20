@@ -1,3 +1,4 @@
+use ixforge_agent::config::Secret;
 use ixforge_agent::core_client::{
     BgpSessionState, BirdInstanceStatus, ConfigApplied, CoreClient, Heartbeat, StatusReport,
 };
@@ -20,7 +21,13 @@ fn test_heartbeat() -> Heartbeat {
 const RS_ID: &str = "550e8400-e29b-41d4-a716-446655440000";
 
 fn make_client(base_url: &str) -> CoreClient {
-    CoreClient::new(base_url, "test-key", &RS_ID.parse().unwrap(), None).unwrap()
+    CoreClient::new(
+        base_url,
+        &Secret::new("test-key"),
+        &RS_ID.parse().unwrap(),
+        None,
+    )
+    .unwrap()
 }
 
 #[tokio::test]
@@ -173,8 +180,13 @@ async fn test_auth_rejected() {
         .mount(&server)
         .await;
 
-    let client =
-        CoreClient::new(&server.uri(), "wrong-key", &RS_ID.parse().unwrap(), None).unwrap();
+    let client = CoreClient::new(
+        &server.uri(),
+        &Secret::new("wrong-key"),
+        &RS_ID.parse().unwrap(),
+        None,
+    )
+    .unwrap();
     let result = client.get_config().await;
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();

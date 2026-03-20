@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::time::{Duration, timeout};
+use tracing::trace;
 
 use super::BirdClient;
 use crate::error::AgentError;
@@ -34,12 +35,10 @@ impl BirdClient for BirdSocketClient {
     }
 
     async fn is_running(&self) -> bool {
-        timeout(
-            Duration::from_secs(5),
-            UnixStream::connect(&self.socket_path),
-        )
-        .await
-        .is_ok_and(|r| r.is_ok())
+        let probe_timeout = self.timeout.min(Duration::from_secs(5));
+        timeout(probe_timeout, UnixStream::connect(&self.socket_path))
+            .await
+            .is_ok_and(|r| r.is_ok())
     }
 }
 
@@ -52,13 +51,13 @@ impl BirdSocketClient {
             ))
         })?;
 
-        // Read the welcome banner
+        // Read and discard the welcome banner
         let mut banner = vec![0u8; 4096];
         let n = stream
             .read(&mut banner)
             .await
             .map_err(|e| AgentError::BirdSocket(format!("failed to read banner: {e}")))?;
-        let _banner_str = String::from_utf8_lossy(&banner[..n]);
+        trace!(banner = %String::from_utf8_lossy(&banner[..n]), "BIRD banner");
 
         // Send the command
         let cmd = format!("{command}\n");
@@ -67,7 +66,8 @@ impl BirdSocketClient {
             .await
             .map_err(|e| AgentError::BirdSocket(format!("failed to send command: {e}")))?;
 
-        // Read the full response, checking only the tail for the end marker
+        // Read the full response until we see a BIRD end-of-response marker
+        // (4-digit code followed by space, not '-')
         let mut response = String::new();
         let mut buf = vec![0u8; 8192];
         loop {
@@ -78,20 +78,23 @@ impl BirdSocketClient {
             if n == 0 {
                 break;
             }
-            let chunk_start = response.len();
             response.push_str(&String::from_utf8_lossy(&buf[..n]));
 
-            // Only scan the new chunk for the BIRD end-of-response marker
-            // (4-digit code followed by space, not '-')
-            if response[chunk_start..].lines().last().is_some_and(|line| {
-                line.len() >= 5
-                    && line.as_bytes()[4] == b' '
-                    && line[..4].chars().all(|c| c.is_ascii_digit())
-            }) {
+            if Self::has_end_marker(&response) {
                 break;
             }
         }
 
         Ok(response)
+    }
+
+    /// Check the last line of the accumulated response for a BIRD end marker.
+    /// A line like "0000 " or "0013 Daemon is up" signals end of response.
+    fn has_end_marker(response: &str) -> bool {
+        response.lines().last().is_some_and(|line| {
+            line.len() >= 5
+                && line.as_bytes()[4] == b' '
+                && line[..4].chars().all(|c| c.is_ascii_digit())
+        })
     }
 }
