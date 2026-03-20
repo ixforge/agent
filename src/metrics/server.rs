@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use axum::Router;
 use axum::extract::State;
@@ -13,8 +14,8 @@ use super::registry::MetricsRegistry;
 #[derive(Clone)]
 struct AppState {
     metrics: Arc<MetricsRegistry>,
-    core_connected: Arc<std::sync::atomic::AtomicBool>,
-    bird_running: Arc<std::sync::atomic::AtomicBool>,
+    core_connected: Arc<AtomicBool>,
+    bird_running: Arc<AtomicBool>,
 }
 
 async fn health_handler(State(state): State<AppState>) -> impl IntoResponse {
@@ -46,14 +47,7 @@ fn build_router(state: AppState) -> Router {
         .with_state(state)
 }
 
-/// Run the metrics server with a pre-bound listener (for testing)
-pub async fn run_with_listener(listener: TcpListener) {
-    let state = AppState {
-        metrics: MetricsRegistry::new(),
-        core_connected: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        bird_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-    };
-
+async fn serve(listener: TcpListener, state: AppState) {
     let app = build_router(state);
 
     match listener.local_addr() {
@@ -66,27 +60,27 @@ pub async fn run_with_listener(listener: TcpListener) {
     });
 }
 
+/// Run the metrics server with a standalone registry (for testing)
+pub async fn run_with_listener(listener: TcpListener) {
+    let state = AppState {
+        metrics: MetricsRegistry::new(),
+        core_connected: Arc::new(AtomicBool::new(false)),
+        bird_running: Arc::new(AtomicBool::new(false)),
+    };
+    serve(listener, state).await;
+}
+
 /// Run the metrics server with shared state from the main loop
 pub async fn run_with_state(
     listener: TcpListener,
     metrics: Arc<MetricsRegistry>,
-    core_connected: Arc<std::sync::atomic::AtomicBool>,
-    bird_running: Arc<std::sync::atomic::AtomicBool>,
+    core_connected: Arc<AtomicBool>,
+    bird_running: Arc<AtomicBool>,
 ) {
     let state = AppState {
         metrics,
         core_connected,
         bird_running,
     };
-
-    let app = build_router(state);
-
-    match listener.local_addr() {
-        Ok(addr) => tracing::info!(addr = %addr, "metrics server listening"),
-        Err(e) => tracing::warn!(error = %e, "could not resolve listener address"),
-    }
-
-    axum::serve(listener, app).await.unwrap_or_else(|e| {
-        tracing::error!(error = %e, "metrics server error");
-    });
+    serve(listener, state).await;
 }

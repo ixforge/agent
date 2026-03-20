@@ -2,6 +2,7 @@
 name = "ixforge-agent"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.91"
 description = "IXForge route server agent - manages BIRD configurations and reports BGP state"
 license = "Apache-2.0"
 repository = "https://github.com/ixforge/agent"

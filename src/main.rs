@@ -14,6 +14,7 @@ use ixforge_agent::config::AgentConfig;
 use ixforge_agent::core_client::{
     BgpSessionState, BirdInstanceStatus, ConfigApplied, CoreClient, Heartbeat, StatusReport,
 };
+use ixforge_agent::error::AgentError;
 use ixforge_agent::metrics::registry::MetricsRegistry;
 use ixforge_agent::state::AgentState;
 
@@ -57,6 +58,155 @@ async fn shutdown_signal() {
             return;
         }
         info!("received ctrl-c, shutting down");
+    }
+}
+
+/// Poll config from Core, validate, and apply if changed.
+async fn poll_and_apply_config(
+    core_client: &CoreClient,
+    bird_manager: &BirdManager<BirdSocketClient>,
+    state: &mut AgentState,
+    metrics: &MetricsRegistry,
+    bird_config: &ixforge_agent::config::BirdConfig,
+    core_connected: &AtomicBool,
+) {
+    let config_resp = match core_client.get_config().await {
+        Ok(resp) => {
+            core_connected.store(true, Ordering::Relaxed);
+            resp
+        }
+        Err(e) => {
+            warn!(error = %e, "failed to poll config from Core");
+            core_connected.store(false, Ordering::Relaxed);
+            metrics.poll_errors_total.inc();
+            return;
+        }
+    };
+
+    let is_new = state
+        .current_config_hash
+        .as_ref()
+        .is_none_or(|h| *h != config_resp.config_hash);
+
+    if !is_new {
+        return;
+    }
+
+    info!(
+        new_hash = %config_resp.config_hash,
+        old_hash = state.current_config_hash.as_deref().unwrap_or("(none)"),
+        "new config detected"
+    );
+
+    let temp_path = format!("{}.tmp", bird_config.config_path);
+
+    if let Err(e) = write_validate_apply(bird_manager, &config_resp.content, &temp_path).await {
+        error!(error = %e, "config update failed");
+        metrics.poll_errors_total.inc();
+        let _ = tokio::fs::remove_file(&temp_path).await;
+        return;
+    }
+
+    let _ = tokio::fs::remove_file(&temp_path).await;
+
+    state.current_config_hash = Some(config_resp.config_hash.clone());
+    metrics.set_config_applied(&config_resp.config_hash);
+
+    let applied = ConfigApplied {
+        config_hash: config_resp.config_hash,
+    };
+    if let Err(e) = core_client.confirm_config_applied(&applied).await {
+        warn!(error = %e, "failed to confirm config applied");
+    }
+}
+
+/// Write temp file, validate with `bird -p`, write final, apply via socket.
+async fn write_validate_apply(
+    bird_manager: &BirdManager<BirdSocketClient>,
+    content: &str,
+    temp_path: &str,
+) -> Result<(), AgentError> {
+    tokio::fs::write(temp_path, content)
+        .await
+        .map_err(|e| AgentError::io(temp_path, e))?;
+
+    bird_manager.validate_config(Path::new(temp_path)).await?;
+    info!("config validation passed");
+
+    bird_manager.write_config(content).await?;
+    bird_manager.apply_config().await
+}
+
+/// Report BGP session states to Core and update metrics.
+async fn report_bgp_status(
+    core_client: &CoreClient,
+    bird_manager: &BirdManager<BirdSocketClient>,
+    state: &mut AgentState,
+    metrics: &MetricsRegistry,
+) {
+    let protocols = match bird_manager.get_protocols().await {
+        Ok(p) => p,
+        Err(e) => {
+            warn!(error = %e, "failed to get BIRD protocols");
+            return;
+        }
+    };
+
+    let sessions: Vec<BgpSessionState> = protocols
+        .iter()
+        .filter_map(|p| {
+            p.neighbor_address.as_ref().map(|addr| BgpSessionState {
+                peer_ip: addr.clone(),
+                oper_state: p.state.as_oper_state().to_string(),
+                af: if addr.contains(':') { 6 } else { 4 },
+            })
+        })
+        .collect();
+
+    if !sessions.is_empty() {
+        let report = StatusReport { sessions };
+        if let Err(e) = core_client.report_status(&report).await {
+            warn!(error = %e, "failed to report BGP status");
+        }
+    }
+
+    metrics.update_bgp_peers(&protocols);
+    state.last_protocols = protocols;
+}
+
+/// Send heartbeat to Core with current agent state.
+async fn send_heartbeat(
+    core_client: &CoreClient,
+    state: &AgentState,
+    bird_is_running: bool,
+    bird_uptime: Option<f64>,
+) {
+    let heartbeat = Heartbeat {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        uptime_seconds: state.uptime_seconds(),
+        current_config_hash: state
+            .current_config_hash
+            .clone()
+            .unwrap_or_else(|| "0".repeat(64)),
+        bird_instances: vec![BirdInstanceStatus {
+            name: "bird".to_string(),
+            running: bird_is_running,
+            uptime_seconds: bird_uptime,
+        }],
+    };
+
+    match core_client.send_heartbeat_with_headers(&heartbeat).await {
+        Ok((response, upgrade_version)) => {
+            if !response.config_hash_match && state.has_config() {
+                warn!("config hash mismatch reported by Core");
+            }
+            if let Some(version) = upgrade_version {
+                warn!(required_version = %version, "Core requests agent upgrade");
+            }
+        }
+        Err(e) => {
+            warn!(error = %e, "failed to send heartbeat");
+        }
     }
 }
 
@@ -106,7 +256,7 @@ async fn main() {
 
     let mut state = AgentState::new();
 
-    // Shared state for metrics server
+    // Shared flags for metrics server (Relaxed ordering: eventual consistency is acceptable)
     let metrics = MetricsRegistry::new();
     let core_connected = Arc::new(AtomicBool::new(false));
     let bird_running_flag = Arc::new(AtomicBool::new(false));
@@ -141,136 +291,23 @@ async fn main() {
     info!("entering main polling loop");
 
     loop {
-        // --- Step 1: Config polling ---
-        match core_client.get_config().await {
-            Ok(config_resp) => {
-                core_connected.store(true, Ordering::Relaxed);
+        poll_and_apply_config(
+            &core_client,
+            &bird_manager,
+            &mut state,
+            &metrics,
+            &config.bird,
+            &core_connected,
+        )
+        .await;
 
-                if config_resp.config_hash != state.current_config_hash {
-                    info!(
-                        new_hash = %config_resp.config_hash,
-                        old_hash = %state.current_config_hash,
-                        "new config detected"
-                    );
-
-                    let temp_path = format!("{}.tmp", config.bird.config_path);
-                    if let Err(e) = tokio::fs::write(&temp_path, &config_resp.content).await {
-                        error!(error = %e, path = %temp_path, "failed to write temp config file");
-                        metrics.poll_errors_total.inc();
-                    } else {
-                        match bird_manager.validate_config(Path::new(&temp_path)).await {
-                            Ok(()) => {
-                                info!("config validation passed");
-
-                                if let Err(e) =
-                                    bird_manager.write_config(&config_resp.content).await
-                                {
-                                    error!(error = %e, "failed to write config");
-                                    metrics.poll_errors_total.inc();
-                                } else {
-                                    match bird_manager.apply_config().await {
-                                        Ok(()) => {
-                                            state.current_config_hash =
-                                                config_resp.config_hash.clone();
-                                            metrics.set_config_applied(&config_resp.config_hash);
-
-                                            let applied = ConfigApplied {
-                                                config_hash: config_resp.config_hash,
-                                            };
-                                            if let Err(e) =
-                                                core_client.confirm_config_applied(&applied).await
-                                            {
-                                                warn!(error = %e, "failed to confirm config applied");
-                                            }
-                                        }
-                                        Err(e) => {
-                                            error!(error = %e, "failed to apply config via birdc");
-                                            metrics.poll_errors_total.inc();
-                                        }
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                error!(error = %e, "config validation failed, keeping previous config");
-                                metrics.poll_errors_total.inc();
-                            }
-                        }
-
-                        let _ = tokio::fs::remove_file(&temp_path).await;
-                    }
-                }
-            }
-            Err(e) => {
-                warn!(error = %e, "failed to poll config from Core");
-                core_connected.store(false, Ordering::Relaxed);
-                metrics.poll_errors_total.inc();
-            }
-        }
-
-        // --- Step 2: BGP status reporting ---
         let bird_is_running = bird_manager.is_running().await;
         bird_running_flag.store(bird_is_running, Ordering::Relaxed);
         let bird_uptime = bird_manager.get_uptime().await;
 
-        match bird_manager.get_protocols().await {
-            Ok(protocols) => {
-                let sessions: Vec<BgpSessionState> = protocols
-                    .iter()
-                    .filter_map(|p| {
-                        p.neighbor_address.as_ref().map(|addr| BgpSessionState {
-                            peer_ip: addr.clone(),
-                            oper_state: p.state.as_oper_state().to_string(),
-                            af: if addr.contains(':') { 6 } else { 4 },
-                        })
-                    })
-                    .collect();
+        report_bgp_status(&core_client, &bird_manager, &mut state, &metrics).await;
+        send_heartbeat(&core_client, &state, bird_is_running, bird_uptime).await;
 
-                if !sessions.is_empty() {
-                    let report = StatusReport { sessions };
-                    if let Err(e) = core_client.report_status(&report).await {
-                        warn!(error = %e, "failed to report BGP status");
-                    }
-                }
-
-                metrics.update_bgp_peers(&protocols);
-                state.last_protocols = protocols;
-            }
-            Err(e) => {
-                warn!(error = %e, "failed to get BIRD protocols");
-            }
-        }
-
-        // --- Step 3: Heartbeat ---
-        let heartbeat = Heartbeat {
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            uptime_seconds: state.uptime_seconds(),
-            current_config_hash: if state.has_config() {
-                state.current_config_hash.clone()
-            } else {
-                "0".repeat(64)
-            },
-            bird_instances: vec![BirdInstanceStatus {
-                name: "bird".to_string(),
-                running: bird_is_running,
-                uptime_seconds: bird_uptime,
-            }],
-        };
-
-        match core_client.send_heartbeat_with_headers(&heartbeat).await {
-            Ok((response, upgrade_version)) => {
-                if !response.config_hash_match && state.has_config() {
-                    warn!("config hash mismatch reported by Core");
-                }
-                if let Some(version) = upgrade_version {
-                    warn!(required_version = %version, "Core requests agent upgrade");
-                }
-            }
-            Err(e) => {
-                warn!(error = %e, "failed to send heartbeat");
-            }
-        }
-
-        // Wait for next poll cycle or shutdown signal
         tokio::select! {
             _ = sleep(interval) => {}
             _ = &mut shutdown => {

@@ -65,7 +65,7 @@ impl<C: BirdClient> BirdManager<C> {
     /// Get all BGP protocol states
     pub async fn get_protocols(&self) -> Result<Vec<BirdProtocol>, AgentError> {
         let output = self.client.send_command("show protocols all").await?;
-        parse_protocols(&output)
+        Ok(parse_protocols(&output))
     }
 
     /// Get BIRD uptime in seconds by parsing `show status` output
