@@ -30,7 +30,7 @@ async fn test_bird_show_protocols() {
 async fn test_bird_parse_real_socket_output() {
     let client = BirdSocketClient::new(&bird_socket_path(), 30);
     let output = client.send_command("show protocols all").await.unwrap();
-    let protocols = parse_protocols(&output).unwrap();
+    let protocols = parse_protocols(&output);
 
     // Our test bird.conf has 3 BGP peers
     assert_eq!(protocols.len(), 3, "should find 3 BGP protocols");

@@ -54,14 +54,14 @@ peer_as64502_v6 BGP        ---      up     2024-01-14  Established
 
 #[test]
 fn test_parse_protocols_extracts_bgp_only() {
-    let protocols = parse_protocols(BIRD_OUTPUT_MIXED).unwrap();
+    let protocols = parse_protocols(BIRD_OUTPUT_MIXED);
     assert_eq!(protocols.len(), 3);
     assert!(protocols.iter().all(|p| p.proto == "BGP"));
 }
 
 #[test]
 fn test_parse_established_session() {
-    let protocols = parse_protocols(BIRD_OUTPUT_MIXED).unwrap();
+    let protocols = parse_protocols(BIRD_OUTPUT_MIXED);
     let p = protocols.iter().find(|p| p.name == "peer_as64500").unwrap();
     assert_eq!(p.state, BgpState::Up);
     assert_eq!(p.neighbor_address.as_deref(), Some("10.0.0.1"));
@@ -72,7 +72,7 @@ fn test_parse_established_session() {
 
 #[test]
 fn test_parse_active_session() {
-    let protocols = parse_protocols(BIRD_OUTPUT_MIXED).unwrap();
+    let protocols = parse_protocols(BIRD_OUTPUT_MIXED);
     let p = protocols.iter().find(|p| p.name == "peer_as64501").unwrap();
     assert_eq!(p.state, BgpState::Down);
     assert_eq!(p.neighbor_address.as_deref(), Some("10.0.0.2"));
@@ -83,7 +83,7 @@ fn test_parse_active_session() {
 
 #[test]
 fn test_parse_ipv6_session() {
-    let protocols = parse_protocols(BIRD_OUTPUT_MIXED).unwrap();
+    let protocols = parse_protocols(BIRD_OUTPUT_MIXED);
     let p = protocols
         .iter()
         .find(|p| p.name == "peer_as64502_v6")
@@ -99,8 +99,7 @@ fn test_parse_ipv6_session() {
 fn test_parse_empty_output() {
     let protocols = parse_protocols(
         "BIRD 2.15.1 ready.\nName       Proto      Table    State  Since       Info\n",
-    )
-    .unwrap();
+    );
     assert!(protocols.is_empty());
 }
 
@@ -179,14 +178,14 @@ const BIRD_SOCKET_RAW: &str = "\
 
 #[test]
 fn test_parse_raw_socket_output() {
-    let protocols = parse_protocols(BIRD_SOCKET_RAW).unwrap();
+    let protocols = parse_protocols(BIRD_SOCKET_RAW);
     assert_eq!(protocols.len(), 3);
     assert!(protocols.iter().all(|p| p.proto == "BGP"));
 }
 
 #[test]
 fn test_parse_raw_socket_bgp_details() {
-    let protocols = parse_protocols(BIRD_SOCKET_RAW).unwrap();
+    let protocols = parse_protocols(BIRD_SOCKET_RAW);
     let p = protocols.iter().find(|p| p.name == "peer_as64500").unwrap();
     assert_eq!(p.state, BgpState::Down);
     assert_eq!(p.neighbor_address.as_deref(), Some("10.99.0.1"));
@@ -195,7 +194,7 @@ fn test_parse_raw_socket_bgp_details() {
 
 #[test]
 fn test_parse_raw_socket_all_peers_found() {
-    let protocols = parse_protocols(BIRD_SOCKET_RAW).unwrap();
+    let protocols = parse_protocols(BIRD_SOCKET_RAW);
     let names: Vec<&str> = protocols.iter().map(|p| p.name.as_str()).collect();
     assert_eq!(names, vec!["peer_as64500", "peer_as64501", "peer_as64502"]);
 }
@@ -223,7 +222,7 @@ peer_openconfirm BGP        ---      start  2024-01-15  OpenConfirm
 
 #[test]
 fn test_parse_various_down_states() {
-    let protocols = parse_protocols(BIRD_OUTPUT_CONNECT_STATES).unwrap();
+    let protocols = parse_protocols(BIRD_OUTPUT_CONNECT_STATES);
     assert_eq!(protocols.len(), 3);
     assert!(protocols.iter().all(|p| p.state == BgpState::Down));
 }

@@ -5,6 +5,28 @@ use uuid::Uuid;
 
 use crate::error::AgentError;
 
+/// Wrapper that redacts secrets from Debug output
+#[derive(Clone, Deserialize)]
+#[serde(transparent)]
+pub struct Secret(String);
+
+impl Secret {
+    /// Construct a Secret from a plain string value
+    pub fn new(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
+
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for Secret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("[REDACTED]")
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct AgentConfig {
     pub core: CoreConfig,
@@ -16,7 +38,7 @@ pub struct AgentConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub struct CoreConfig {
     pub url: String,
-    pub api_key: String,
+    pub api_key: Secret,
     pub route_server_id: Uuid,
     #[serde(default = "default_poll_interval")]
     pub poll_interval_secs: u64,
@@ -85,7 +107,7 @@ impl AgentConfig {
         if self.core.url.is_empty() {
             return Err(AgentError::Config("core.url cannot be empty".to_string()));
         }
-        if self.core.api_key.is_empty() {
+        if self.core.api_key.expose().is_empty() {
             return Err(AgentError::Config(
                 "core.api_key cannot be empty".to_string(),
             ));

@@ -1,7 +1,5 @@
 use chrono::NaiveDateTime;
 
-use crate::error::AgentError;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BgpState {
     Up,
@@ -56,7 +54,7 @@ fn strip_protocol_code(line: &str) -> Option<&str> {
     Some(line)
 }
 
-pub fn parse_protocols(output: &str) -> Result<Vec<BirdProtocol>, AgentError> {
+pub fn parse_protocols(output: &str) -> Vec<BirdProtocol> {
     let mut protocols = Vec::new();
     let mut current: Option<ProtocolBuilder> = None;
 
@@ -94,7 +92,7 @@ pub fn parse_protocols(output: &str) -> Result<Vec<BirdProtocol>, AgentError> {
         protocols.push(proto);
     }
 
-    Ok(protocols)
+    protocols
 }
 
 struct ProtocolBuilder {
