@@ -79,10 +79,23 @@ impl<C: BirdClient> BirdManager<C> {
         self.client.is_running().await
     }
 
-    /// Write config content to the config file
-    pub async fn write_config(&self, content: &str) -> Result<(), AgentError> {
-        tokio::fs::write(&self.config_path, content)
+    /// Atomically install a previously-validated config file at `temp_path`
+    /// by renaming it over `self.config_path` and fsyncing the parent dir.
+    /// Rename is atomic within a single filesystem, so a crash cannot leave
+    /// the live config partially written.
+    pub async fn commit_config(&self, temp_path: &Path) -> Result<(), AgentError> {
+        tokio::fs::rename(temp_path, &self.config_path)
             .await
-            .map_err(|e| AgentError::io(&self.config_path, e))
+            .map_err(|e| AgentError::io(&self.config_path, e))?;
+
+        if let Some(parent) = self.config_path.parent() {
+            let dir = tokio::fs::File::open(parent)
+                .await
+                .map_err(|e| AgentError::io(parent, e))?;
+            dir.sync_all()
+                .await
+                .map_err(|e| AgentError::io(parent, e))?;
+        }
+        Ok(())
     }
 }
