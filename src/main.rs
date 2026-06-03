@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use clap::Parser;
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::time::{Duration, sleep};
 use tracing::{error, info, warn};
@@ -107,8 +108,6 @@ async fn poll_and_apply_config(
         return;
     }
 
-    let _ = tokio::fs::remove_file(&temp_path).await;
-
     state.current_config_hash = Some(config_resp.config_hash.clone());
     metrics.set_config_applied(&config_resp.config_hash);
 
@@ -120,20 +119,32 @@ async fn poll_and_apply_config(
     }
 }
 
-/// Write temp file, validate with `bird -p`, write final, apply via socket.
+/// Write temp file (fsynced), validate with `bird -p`, atomically rename
+/// into place, then apply via socket. The rename is atomic within a single
+/// filesystem, so a crash between validation and apply cannot leave the
+/// live config partially written.
 async fn write_validate_apply(
     bird_manager: &BirdManager<BirdSocketClient>,
     content: &str,
     temp_path: &str,
 ) -> Result<(), AgentError> {
-    tokio::fs::write(temp_path, content)
-        .await
-        .map_err(|e| AgentError::io(temp_path, e))?;
+    let temp = Path::new(temp_path);
 
-    bird_manager.validate_config(Path::new(temp_path)).await?;
+    let mut file = tokio::fs::File::create(temp)
+        .await
+        .map_err(|e| AgentError::io(temp, e))?;
+    file.write_all(content.as_bytes())
+        .await
+        .map_err(|e| AgentError::io(temp, e))?;
+    file.sync_all()
+        .await
+        .map_err(|e| AgentError::io(temp, e))?;
+    drop(file);
+
+    bird_manager.validate_config(temp).await?;
     info!("config validation passed");
 
-    bird_manager.write_config(content).await?;
+    bird_manager.commit_config(temp).await?;
     bird_manager.apply_config().await
 }
 
