@@ -49,10 +49,14 @@ impl<C: BirdClient> BirdManager<C> {
     }
 
     /// Apply config by sending `configure` to BIRD via socket
+    ///
+    /// BIRD replies `0003 Reconfigured` when the change applies immediately or
+    /// `0004 Reconfiguration in progress` when protocols restart asynchronously.
+    /// Both mean the new config was accepted
     pub async fn apply_config(&self) -> Result<(), AgentError> {
         let response = self.client.send_command("configure").await?;
 
-        if response.contains("Reconfigured") {
+        if response.contains("Reconfigured") || response.contains("Reconfiguration in progress") {
             info!(config_path = %self.config_path.display(), "BIRD config applied");
             Ok(())
         } else {
@@ -99,3 +103,62 @@ impl<C: BirdClient> BirdManager<C> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use super::*;
+    use crate::bird::BirdClient;
+
+    struct MockClient {
+        response: Mutex<String>,
+    }
+
+    impl MockClient {
+        fn with_response(response: &str) -> Self {
+            Self {
+                response: Mutex::new(response.to_string()),
+            }
+        }
+    }
+
+    impl BirdClient for MockClient {
+        async fn send_command(&self, _command: &str) -> Result<String, AgentError> {
+            Ok(self.response.lock().unwrap().clone())
+        }
+
+        async fn is_running(&self) -> bool {
+            true
+        }
+    }
+
+    fn manager(response: &str) -> BirdManager<MockClient> {
+        BirdManager::new(
+            MockClient::with_response(response),
+            "/etc/bird/bird.conf",
+            "/usr/sbin/bird",
+        )
+    }
+
+    #[tokio::test]
+    async fn apply_config_accepts_immediate_reconfigure() {
+        let m = manager("0002-Reading configuration from /etc/bird/bird.conf\n0003 Reconfigured\n");
+        assert!(m.apply_config().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn apply_config_accepts_reconfiguration_in_progress() {
+        let m = manager(
+            "0002-Reading configuration from /etc/bird/bird.conf\n0004 Reconfiguration in progress\n",
+        );
+        assert!(m.apply_config().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn apply_config_rejects_errors() {
+        let m = manager("8002 /etc/bird/bird.conf, line 5: syntax error\n");
+        assert!(m.apply_config().await.is_err());
+    }
+}
+
