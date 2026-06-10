@@ -15,9 +15,10 @@ User=root
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/etc/bird
+# /run/bird permite conectarse al socket de control de BIRD
+ReadWritePaths=/etc/bird /run/bird
 # Uncomment if logging.file_path is configured:
-# ReadWritePaths=/etc/bird /var/log
+# ReadWritePaths=/etc/bird /run/bird /var/log
 PrivateTmp=yes
 
 [Install]
