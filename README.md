@@ -2,7 +2,7 @@
 
 Daemon ligero en Rust que gestiona la configuracion BIRD en route servers de un IXP. Parte del ecosistema [IXForge](https://github.com/ixforge).
 
-Pollea configuracion desde el Core, la valida con `bird -p`, la aplica via `birdc configure`, y reporta el estado de las sesiones BGP de vuelta al Core. Expone metricas Prometheus y endpoint de health.
+Pollea configuracion desde el Core, la valida con `bird -p`, la instala atomicamente y la aplica enviando `configure` por el socket de control de BIRD, y reporta el estado de las sesiones BGP de vuelta al Core. Expone metricas Prometheus y endpoint de health.
 
 ## Componentes del ecosistema
 
@@ -17,6 +17,9 @@ Pollea configuracion desde el Core, la valida con `bird -p`, la aplica via `bird
 - Instancia de IXForge Core accesible
 - Linux amd64
 - Acceso root (para gestionar configuracion BIRD)
+- Una API key con scope `agent:route_server` vinculada a este route server,
+  creada en el Core con `POST /api/v1/route-servers/{id}/api-keys` (la key
+  cruda se devuelve una sola vez)
 
 ## Instalacion
 
@@ -43,33 +46,57 @@ Crear `/etc/ixforge-agent/config.toml`:
 ```toml
 [core]
 url = "https://core.tuixp.net"
-api_key = "tu-api-key"
+api_key = "ixf_ag_xxxxxxxxxxxx"
 route_server_id = "550e8400-e29b-41d4-a716-446655440000"
 poll_interval_secs = 30
+# ca_cert_path = "/etc/ixforge-agent/ca.pem"   # opcional, CA interna para TLS
 
 [bird]
 socket_path = "/run/bird/bird.ctl"
 config_path = "/etc/bird/bird.conf"
+bird_binary = "/usr/sbin/bird"     # opcional, default /usr/sbin/bird (usado para bird -p)
+socket_timeout_secs = 30           # opcional, default 30
 
 [metrics]
-listen = "127.0.0.1:9091"
+listen = "0.0.0.0:9100"
 
 [logging]
 level = "info"
 format = "json"
+# file_path = "/var/log/ixforge-agent.log"   # opcional, ademas de stdout
 ```
+
+Ver `config.toml.example` para la referencia completa de campos.
 
 ## Endpoints
 
-- `GET /health` — Estado del agent y de BIRD
-- `GET /metrics` — Metricas Prometheus (sesiones BGP, prefijos, uptime, CPU/RAM)
+Servidos en la direccion de `[metrics] listen` (por defecto `:9100`):
+
+- `GET /health` — JSON con `version`, `uptime_seconds`, `bird.running`, `core_connected`
+- `GET /metrics` — Metricas Prometheus:
+  - `ixforge_agent_uptime_seconds`
+  - `ixforge_agent_poll_errors_total`
+  - `ixforge_agent_bgp_sessions_up`, `ixforge_agent_bgp_sessions_total`
+  - `ixforge_agent_host_cpu_usage_percent`, `ixforge_agent_host_memory_usage_percent`
+  - `ixforge_agent_config_last_applied_timestamp`
+
+Si BIRD no esta corriendo el agent no se cae: el health reporta `bird.running:false`,
+sigue enviando heartbeats y reintenta aplicar config en cada ciclo.
 
 ## Desarrollo
+
+Requiere toolchain Rust >= 1.91 (edition 2024).
 
 ```bash
 cargo build --release
 cargo test
 cargo clippy -- -D warnings
+```
+
+Sin toolchain local, compilar en Docker:
+
+```bash
+docker run --rm -v "$PWD":/src -w /src rust:1-bookworm cargo build --release
 ```
 
 Tests de integracion contra BIRD real en Docker:
