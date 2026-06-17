@@ -1,6 +1,11 @@
 # IXForge Agent v0.1 Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **Estado: IMPLEMENTADO (documento historico).** Las 15 tareas estan en el codigo,
+> pero el agent evoluciono despues de este plan: el tipo `Secret`, `socket_timeout_secs`,
+> `BgpSessionState.af`, `parse_protocols` infalible, `commit_config` (reemplaza
+> `write_config`), el manejo de señales y el Docker con `socat`/3 peers no estan
+> aqui. Los snippets de este plan ya no compilan contra el codigo actual; usar
+> `README.md`, `CLAUDE.md` y `src/` como referencia vigente.
 
 **Goal:** Build a Rust agent that polls BIRD config from the Core, validates and applies it, reports BGP session state, sends heartbeats, and exposes Prometheus metrics + health endpoint.
 

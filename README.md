@@ -79,6 +79,9 @@ Servidos en la direccion de `[metrics] listen` (por defecto `:9100`):
   - `ixforge_agent_bgp_sessions_up`, `ixforge_agent_bgp_sessions_total`
   - `ixforge_agent_host_cpu_usage_percent`, `ixforge_agent_host_memory_usage_percent`
   - `ixforge_agent_config_last_applied_timestamp`
+  - `ixforge_agent_config_info{config_hash}`
+  - `ixforge_agent_bgp_session_state{peer,asn}` (1=up, 0=down, por peer)
+  - `ixforge_agent_bgp_prefixes_imported{peer,asn}`, `ixforge_agent_bgp_prefixes_exported{peer,asn}`
 
 Si BIRD no esta corriendo el agent no se cae: el health reporta `bird.running:false`,
 sigue enviando heartbeats y reintenta aplicar config en cada ciclo.
