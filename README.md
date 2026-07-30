@@ -110,6 +110,15 @@ BIRD_SOCKET=/tmp/ixforge-bird-test/bird.ctl cargo test --test integration_test -
 docker compose -f docker/docker-compose.test.yml down
 ```
 
+## Deploy
+
+`./deploy.sh <dev|prod>` compila el binario del commit actual de HEAD (aborta si
+hay cambios sin commitear) y lo instala en los dos route servers del entorno via
+systemd. BIRD no se toca. Verifica que ambos route servers queden con el binario
+identico y reporten `bird running` y `core_connected`. Para prod pide confirmacion
+(saltable con `--yes`). El flujo dev -> prod completo esta en el repo `core`
+(`docs/staging.md`).
+
 ## Licencia
 
 Apache 2.0
