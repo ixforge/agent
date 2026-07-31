@@ -4,7 +4,7 @@
 # URL of the IXForge Core API
 url = "https://portal.tuixp.net"
 # API key with agent:route_server scope
-api_key = "ixf_ag_xxxxxxxxxxxx"
+api_key = "ixf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 # UUID of the route server this agent manages
 route_server_id = "550e8400-e29b-41d4-a716-446655440000"
 # Polling interval in seconds
