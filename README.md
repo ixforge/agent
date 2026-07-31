@@ -46,7 +46,7 @@ Crear `/etc/ixforge-agent/config.toml`:
 ```toml
 [core]
 url = "https://core.tuixp.net"
-api_key = "ixf_ag_xxxxxxxxxxxx"
+api_key = "ixf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 route_server_id = "550e8400-e29b-41d4-a716-446655440000"
 poll_interval_secs = 30
 # ca_cert_path = "/etc/ixforge-agent/ca.pem"   # opcional, CA interna para TLS
@@ -70,7 +70,7 @@ Ver `config.toml.example` para la referencia completa de campos.
 
 ## Endpoints
 
-Servidos en la direccion de `[metrics] listen` (por defecto `:9100`):
+Servidos en la direccion de `[metrics] listen` (campo requerido; en el ejemplo `:9100`):
 
 - `GET /health` — JSON con `version`, `uptime_seconds`, `bird.running`, `core_connected`
 - `GET /metrics` — Metricas Prometheus:
