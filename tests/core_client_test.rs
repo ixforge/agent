@@ -112,7 +112,10 @@ async fn test_heartbeat_success() {
         .await;
 
     let client = make_client(&server.uri());
-    let (response, _) = client.send_heartbeat_with_headers(&test_heartbeat()).await.unwrap();
+    let (response, _) = client
+        .send_heartbeat_with_headers(&test_heartbeat())
+        .await
+        .unwrap();
     assert!(response.acknowledged);
     assert!(response.config_hash_match);
 }

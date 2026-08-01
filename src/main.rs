@@ -13,7 +13,8 @@ use ixforge_agent::bird::manager::BirdManager;
 use ixforge_agent::bird::socket::BirdSocketClient;
 use ixforge_agent::config::AgentConfig;
 use ixforge_agent::core_client::{
-    BgpSessionState, BirdInstanceStatus, ConfigApplied, CoreClient, Heartbeat, StatusReport,
+    BgpSessionState, BirdInstanceStatus, ConfigApplied, ConfigFailed, CoreClient, Heartbeat,
+    StatusReport,
 };
 use ixforge_agent::error::AgentError;
 use ixforge_agent::metrics::registry::MetricsRegistry;
@@ -105,6 +106,14 @@ async fn poll_and_apply_config(
         error!(error = %e, "config update failed");
         metrics.poll_errors_total.inc();
         let _ = tokio::fs::remove_file(&temp_path).await;
+        // Reportar el motivo al Core para que se vea en el portal (max 4000 chars)
+        let failed = ConfigFailed {
+            config_hash: config_resp.config_hash.clone(),
+            error: e.to_string().chars().take(4000).collect(),
+        };
+        if let Err(report_err) = core_client.report_config_failed(&failed).await {
+            warn!(error = %report_err, "failed to report config failure to Core");
+        }
         return;
     }
 
@@ -136,9 +145,7 @@ async fn write_validate_apply(
     file.write_all(content.as_bytes())
         .await
         .map_err(|e| AgentError::io(temp, e))?;
-    file.sync_all()
-        .await
-        .map_err(|e| AgentError::io(temp, e))?;
+    file.sync_all().await.map_err(|e| AgentError::io(temp, e))?;
     drop(file);
 
     bird_manager.validate_config(temp).await?;

@@ -161,4 +161,3 @@ mod tests {
         assert!(m.apply_config().await.is_err());
     }
 }
-
