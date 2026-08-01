@@ -57,6 +57,12 @@ pub struct ConfigApplied {
     pub config_hash: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ConfigFailed {
+    pub config_hash: String,
+    pub error: String,
+}
+
 // --- Core API error response ---
 
 #[derive(Debug, Clone, Deserialize)]
@@ -179,6 +185,21 @@ impl CoreClient {
         let resp = self
             .http
             .post(self.agent_url("/config/applied"))
+            .json(body)
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body_text = resp.text().await.unwrap_or_default();
+            return Err(AgentError::CoreApi(format!("{status}: {body_text}")));
+        }
+        Ok(())
+    }
+
+    pub async fn report_config_failed(&self, body: &ConfigFailed) -> Result<(), AgentError> {
+        let resp = self
+            .http
+            .post(self.agent_url("/config/failed"))
             .json(body)
             .send()
             .await?;
