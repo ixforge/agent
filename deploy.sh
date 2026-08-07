@@ -9,10 +9,13 @@
 # commitear) y lo instala en los dos route servers del entorno. BIRD no se toca
 set -euo pipefail
 
-# lista de route servers por entorno (separados por espacio)
+# Route servers por entorno (separados por espacio). Se definen en deploy.env
+# (gitignored, ver deploy.env.example)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[ -f "$SCRIPT_DIR/deploy.env" ] && . "$SCRIPT_DIR/deploy.env"
 declare -A ROUTE_SERVERS=(
-  [dev]="REDACTED_IP REDACTED_IP"
-  [prod]="REDACTED_IP REDACTED_IP"
+  [dev]="${DEV_ROUTE_SERVERS:-}"
+  [prod]="${PROD_ROUTE_SERVERS:-}"
 )
 
 BIN=target/release/ixforge-agent
