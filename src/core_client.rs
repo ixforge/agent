@@ -30,6 +30,9 @@ pub struct BgpSessionState {
     pub peer_ip: String,
     pub oper_state: String,
     pub af: u8,
+    /// Ausente y no cero: una sesion caida no tiene conteo, no tiene cero rutas
+    pub prefixes_imported: Option<u32>,
+    pub prefixes_exported: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -177,6 +177,8 @@ async fn report_bgp_status(
                 peer_ip: addr.clone(),
                 oper_state: p.state.as_oper_state().to_string(),
                 af: if addr.contains(':') { 6 } else { 4 },
+                prefixes_imported: p.prefixes_imported,
+                prefixes_exported: p.prefixes_exported,
             })
         })
         .collect();

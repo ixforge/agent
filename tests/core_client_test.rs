@@ -85,11 +85,15 @@ async fn test_report_status_success() {
                 peer_ip: "10.0.0.1".into(),
                 oper_state: "up".into(),
                 af: 4,
+                prefixes_imported: None,
+                prefixes_exported: None,
             },
             BgpSessionState {
                 peer_ip: "10.0.0.2".into(),
                 oper_state: "down".into(),
                 af: 4,
+                prefixes_imported: None,
+                prefixes_exported: None,
             },
         ],
     };
@@ -197,4 +201,36 @@ async fn test_auth_rejected() {
         err_msg.contains("401") || err_msg.contains("UNAUTHORIZED"),
         "Error should mention auth failure: {err_msg}"
     );
+}
+
+/// El conteo de prefijos se parsea desde hace tiempo pero nunca se reportaba,
+/// asi que ni el Core ni el sitio publico podian mostrarlo
+#[test]
+fn el_estado_de_sesion_lleva_el_conteo_de_prefijos() {
+    let estado = ixforge_agent::core_client::BgpSessionState {
+        peer_ip: "45.170.101.11".to_string(),
+        oper_state: "up".to_string(),
+        af: 4,
+        prefixes_imported: Some(3),
+        prefixes_exported: Some(123491),
+    };
+
+    let json = serde_json::to_value(&estado).expect("serializa");
+    assert_eq!(json["prefixes_imported"], 3);
+    assert_eq!(json["prefixes_exported"], 123491);
+}
+
+/// Una sesion caida no tiene conteo, y eso no es cero: es que no se sabe
+#[test]
+fn el_conteo_ausente_se_serializa_como_null() {
+    let estado = ixforge_agent::core_client::BgpSessionState {
+        peer_ip: "2803:30d0:4958:8000::5".to_string(),
+        oper_state: "down".to_string(),
+        af: 6,
+        prefixes_imported: None,
+        prefixes_exported: None,
+    };
+
+    let json = serde_json::to_value(&estado).expect("serializa");
+    assert!(json["prefixes_imported"].is_null());
 }
