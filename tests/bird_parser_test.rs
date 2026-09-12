@@ -386,3 +386,43 @@ fn una_ruta_sin_communities_las_deja_vacias() {
 
     assert!(rutas[0].communities.is_empty());
 }
+
+/// Capturado del socket de un route server en produccion, no escrito a mano
+///
+/// El formato del socket no es el que imprime birdc: la primera linea de un
+/// bloque lleva el codigo y las siguientes llevan UN espacio en su lugar. La
+/// primera ruta cae justo ahi, como continuacion del encabezado de la tabla,
+/// asi que un parser que descarte todo lo indentado se come una ruta por dump
+const SALIDA_REAL_DEL_SOCKET: &str = concat!(
+    "1007-Table t_APO_45_170_101_11_v4:\n",
+    " 45.238.179.0/24      unicast [pb_APO_45_170_101_11_v4 2026-09-12 15:33:06] * (100) [AS273973i]\n",
+    " \tvia 45.170.101.11 on eth1\n",
+    "1008-\tType: BGP univ\n",
+    "1012-\tBGP.origin: IGP\n",
+    " \tBGP.as_path: 273973\n",
+    " \tBGP.next_hop: 45.170.101.11\n",
+    " \tBGP.community: (64166,65012) (64166,65120)\n",
+    "1007-45.170.100.0/24      unicast [pb_APO_45_170_101_11_v4 2026-09-12 15:33:06] * (100) [AS273973i]\n",
+    "1008-\tvia 45.170.101.11 on eth1\n",
+    "1012-\tBGP.as_path: 273973\n",
+    "0000 "
+);
+
+#[test]
+fn no_se_pierde_la_primera_ruta_del_dump() {
+    let rutas = ixforge_agent::bird::parser::parse_routes(SALIDA_REAL_DEL_SOCKET);
+
+    assert_eq!(rutas.len(), 2, "se perdio una ruta: {rutas:?}");
+    assert_eq!(rutas[0].prefix, "45.238.179.0/24");
+    assert_eq!(rutas[0].as_path, vec![273973]);
+    assert_eq!(rutas[0].communities, vec!["64166:65012", "64166:65120"]);
+    assert_eq!(rutas[1].prefix, "45.170.100.0/24");
+}
+
+#[test]
+fn los_atributos_no_se_confunden_con_rutas() {
+    let rutas = ixforge_agent::bird::parser::parse_routes(SALIDA_REAL_DEL_SOCKET);
+
+    // via, Type, BGP.origin y BGP.next_hop no son prefijos
+    assert!(rutas.iter().all(|r| r.prefix.contains('/')));
+}

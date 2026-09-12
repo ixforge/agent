@@ -268,6 +268,10 @@ pub fn parse_routes(output: &str) -> Vec<BirdRoute> {
             None => continue,
         };
 
+        // Las continuaciones de un bloque llevan UN espacio donde iria el codigo.
+        // La primera ruta del dump cae justo ahi, como continuacion del
+        // encabezado de la tabla, asi que sin quitarlo se pierde una ruta por dump
+        let line = line.strip_prefix(' ').unwrap_or(line);
         let recortada = line.trim();
 
         if let Some(v) = recortada
