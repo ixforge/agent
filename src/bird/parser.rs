@@ -225,6 +225,33 @@ pub struct BirdRoute {
     /// Vacio cuando la ruta no trae el atributo, que no es lo mismo que no
     /// existir: el prefijo igual lo anuncia el peer
     pub as_path: Vec<u32>,
+    /// Estandar y grandes en la misma lista, como texto: "64166:65012" y
+    /// "64166:1001:1". Van juntas porque quien las lee las lee igual, y el
+    /// numero de partes ya dice cual es cual
+    pub communities: Vec<String>,
+}
+
+/// Convierte "(64166,65012) (64166, 1001, 1)" en ["64166:65012", "64166:1001:1"]
+fn parse_communities(valor: &str) -> Vec<String> {
+    let mut salida = Vec::new();
+    let mut resto = valor;
+
+    while let Some(i) = resto.find('(') {
+        let Some(j) = resto[i..].find(')') else { break };
+        let partes: Vec<&str> = resto[i + 1..i + j]
+            .split(',')
+            .map(|p| p.trim())
+            .filter(|p| !p.is_empty())
+            .collect();
+        // Se descarta lo que no sean numeros: el formato de BIRD es conocido, y
+        // lo que no calza no se inventa
+        if partes.len() >= 2 && partes.iter().all(|p| p.parse::<u32>().is_ok()) {
+            salida.push(partes.join(":"));
+        }
+        resto = &resto[i + j + 1..];
+    }
+
+    salida
 }
 
 /// Extrae las rutas de un `show route protocol <nombre> all`
@@ -240,6 +267,18 @@ pub fn parse_routes(output: &str) -> Vec<BirdRoute> {
             Some(l) => l,
             None => continue,
         };
+
+        let recortada = line.trim();
+
+        if let Some(v) = recortada
+            .strip_prefix("BGP.community:")
+            .or_else(|| recortada.strip_prefix("BGP.large_community:"))
+        {
+            if let Some(ultima) = rutas.last_mut() {
+                ultima.communities.extend(parse_communities(v));
+            }
+            continue;
+        }
 
         if let Some(path) = line.trim().strip_prefix("BGP.as_path:") {
             if let Some(ultima) = rutas.last_mut() {
@@ -267,6 +306,7 @@ pub fn parse_routes(output: &str) -> Vec<BirdRoute> {
         rutas.push(BirdRoute {
             prefix: prefix.to_string(),
             as_path: Vec::new(),
+            communities: Vec::new(),
         });
     }
 

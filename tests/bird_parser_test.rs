@@ -353,3 +353,36 @@ fn el_as_path_con_basura_no_rompe_el_parseo() {
     assert_eq!(rutas.len(), 1);
     assert_eq!(rutas[0].as_path, vec![273973]);
 }
+
+#[test]
+fn extrae_las_communities_estandar_y_grandes() {
+    let salida = concat!(
+        "1007-Table t_x:\n",
+        "1007-192.0.2.0/24         unicast [pb_x 2026-09-12 15:33:06] * (100) [AS1i]\n",
+        "1012-\tBGP.as_path: 273973\n",
+        "1012-\tBGP.community: (64166,65012) (64166,65120)\n",
+        "1012-\tBGP.large_community: (64166, 1001, 1)\n",
+        "0000 "
+    );
+
+    let rutas = ixforge_agent::bird::parser::parse_routes(salida);
+
+    assert_eq!(
+        rutas[0].communities,
+        vec!["64166:65012", "64166:65120", "64166:1001:1"]
+    );
+}
+
+#[test]
+fn una_ruta_sin_communities_las_deja_vacias() {
+    let salida = concat!(
+        "1007-Table t_x:\n",
+        "1007-192.0.2.0/24         unicast [pb_x 2026-09-12 15:33:06] * (100) [AS1i]\n",
+        "1012-\tBGP.as_path: 273973\n",
+        "0000 "
+    );
+
+    let rutas = ixforge_agent::bird::parser::parse_routes(salida);
+
+    assert!(rutas[0].communities.is_empty());
+}

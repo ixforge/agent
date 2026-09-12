@@ -264,10 +264,12 @@ async fn reporta_los_prefijos_de_cada_sesion() {
                 RoutePrefix {
                     prefix: "45.238.179.0/24".into(),
                     as_path: vec![273973],
+                    communities: vec!["64166:65012".into()],
                 },
                 RoutePrefix {
                     prefix: "45.170.100.0/24".into(),
                     as_path: vec![273973],
+                    communities: vec![],
                 },
             ],
         }],
@@ -286,6 +288,7 @@ fn el_reporte_de_prefijos_se_serializa_como_lo_espera_el_core() {
             prefixes: vec![RoutePrefix {
                 prefix: "45.238.179.0/24".into(),
                 as_path: vec![64500, 273973],
+                communities: vec!["64166:65120".into()],
             }],
         }],
     };
@@ -295,4 +298,8 @@ fn el_reporte_de_prefijos_se_serializa_como_lo_espera_el_core() {
     assert_eq!(j["sessions"][0]["af"], 4);
     assert_eq!(j["sessions"][0]["prefixes"][0]["prefix"], "45.238.179.0/24");
     assert_eq!(j["sessions"][0]["prefixes"][0]["as_path"][0], 64500);
+    assert_eq!(
+        j["sessions"][0]["prefixes"][0]["communities"][0],
+        "64166:65120"
+    );
 }

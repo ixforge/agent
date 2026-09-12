@@ -45,6 +45,7 @@ pub struct StatusReport {
 pub struct RoutePrefix {
     pub prefix: String,
     pub as_path: Vec<u32>,
+    pub communities: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -255,6 +255,7 @@ async fn report_prefixes(
                 .map(|r| RoutePrefix {
                     prefix: r.prefix,
                     as_path: r.as_path,
+                    communities: r.communities,
                 })
                 .collect(),
         });
