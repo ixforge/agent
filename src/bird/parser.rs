@@ -217,3 +217,58 @@ fn parse_bird_timestamp(s: &str) -> Option<NaiveDateTime> {
         .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S"))
         .ok()
 }
+
+/// Una ruta que un peer le anuncia al route server
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BirdRoute {
+    pub prefix: String,
+    /// Vacio cuando la ruta no trae el atributo, que no es lo mismo que no
+    /// existir: el prefijo igual lo anuncia el peer
+    pub as_path: Vec<u32>,
+}
+
+/// Extrae las rutas de un `show route protocol <nombre> all`
+///
+/// Solo interesan el prefijo y el AS path. El resto de atributos que BIRD
+/// imprime se ignora, y el timestamp tambien: BIRD lo da en hora local del
+/// route server y a veces sin fecha, asi que el Core lleva su propio reloj
+pub fn parse_routes(output: &str) -> Vec<BirdRoute> {
+    let mut rutas: Vec<BirdRoute> = Vec::new();
+
+    for raw_line in output.lines() {
+        let line = match strip_protocol_code(raw_line) {
+            Some(l) => l,
+            None => continue,
+        };
+
+        if let Some(path) = line.trim().strip_prefix("BGP.as_path:") {
+            if let Some(ultima) = rutas.last_mut() {
+                ultima.as_path = path
+                    .split_whitespace()
+                    .filter_map(|t| t.parse::<u32>().ok())
+                    .collect();
+            }
+            continue;
+        }
+
+        // Una linea de ruta empieza con el prefijo, sin indentar, y declara el
+        // tipo despues. Las continuaciones de un mismo prefijo vienen
+        // indentadas y no abren una ruta nueva
+        if line.starts_with(char::is_whitespace) {
+            continue;
+        }
+        let Some((prefix, resto)) = line.split_once(char::is_whitespace) else {
+            continue;
+        };
+        if !prefix.contains('/') || !resto.contains("unicast") {
+            continue;
+        }
+
+        rutas.push(BirdRoute {
+            prefix: prefix.to_string(),
+            as_path: Vec::new(),
+        });
+    }
+
+    rutas
+}

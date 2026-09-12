@@ -7,14 +7,15 @@ use clap::Parser;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::time::{Duration, sleep};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use ixforge_agent::bird::manager::BirdManager;
+use ixforge_agent::bird::parser::BgpState;
 use ixforge_agent::bird::socket::BirdSocketClient;
 use ixforge_agent::config::AgentConfig;
 use ixforge_agent::core_client::{
     BgpSessionState, BirdInstanceStatus, ConfigApplied, ConfigFailed, CoreClient, Heartbeat,
-    StatusReport,
+    PrefixReport, RoutePrefix, SessionPrefixes, StatusReport,
 };
 use ixforge_agent::error::AgentError;
 use ixforge_agent::metrics::registry::MetricsRegistry;
@@ -194,6 +195,81 @@ async fn report_bgp_status(
     state.last_protocols = protocols;
 }
 
+/// Tope de prefijos por sesion que se listan uno por uno
+///
+/// Arriba de esto solo va el conteo. Deja fuera al transito sin que el agente
+/// tenga que saber quien es miembro: un peer de transito trae cientos de miles
+/// de rutas y listarlas no le sirve a nadie
+const MAX_PREFIJOS_POR_SESION: u32 = 1000;
+
+/// Cada cuantos ciclos se reportan los prefijos
+///
+/// El dump de rutas es caro y los prefijos casi no se mueven, asi que no van en
+/// cada reporte de estado
+const CICLOS_ENTRE_REPORTES_DE_PREFIJOS: u64 = 10;
+
+/// Report the prefixes each peer is advertising.
+async fn report_prefixes(
+    core_client: &CoreClient,
+    bird_manager: &BirdManager<BirdSocketClient>,
+    protocols: &[ixforge_agent::bird::parser::BirdProtocol],
+) {
+    let mut sessions = Vec::new();
+
+    for p in protocols {
+        let Some(addr) = p.neighbor_address.as_ref() else {
+            continue;
+        };
+        if p.state != BgpState::Up {
+            continue;
+        }
+        // Sin conteo no se sabe cuanto va a venir, asi que no se pide
+        match p.prefixes_imported {
+            Some(n) if n <= MAX_PREFIJOS_POR_SESION => {}
+            Some(n) => {
+                debug!(
+                    protocol = %p.name,
+                    prefixes = n,
+                    "peer advertises too many prefixes to list"
+                );
+                continue;
+            }
+            None => continue,
+        }
+
+        let rutas = match bird_manager.get_routes(&p.name).await {
+            Ok(r) => r,
+            Err(e) => {
+                warn!(protocol = %p.name, error = %e, "failed to get routes");
+                continue;
+            }
+        };
+
+        // Una sesion sin rutas se reporta igual: es como el Core se entera de
+        // que el peer retiro todo lo que tenia
+        sessions.push(SessionPrefixes {
+            peer_ip: addr.clone(),
+            af: if addr.contains(':') { 6 } else { 4 },
+            prefixes: rutas
+                .into_iter()
+                .map(|r| RoutePrefix {
+                    prefix: r.prefix,
+                    as_path: r.as_path,
+                })
+                .collect(),
+        });
+    }
+
+    if sessions.is_empty() {
+        return;
+    }
+
+    let report = PrefixReport { sessions };
+    if let Err(e) = core_client.report_prefixes(&report).await {
+        warn!(error = %e, "failed to report prefixes");
+    }
+}
+
 /// Send heartbeat to Core with current agent state.
 async fn send_heartbeat(
     core_client: &CoreClient,
@@ -309,6 +385,7 @@ async fn main() {
     tokio::pin!(shutdown);
 
     info!("entering main polling loop");
+    let mut ciclo: u64 = 0;
 
     loop {
         poll_and_apply_config(
@@ -326,6 +403,13 @@ async fn main() {
         let bird_uptime = bird_manager.get_uptime().await;
 
         report_bgp_status(&core_client, &bird_manager, &mut state, &metrics).await;
+
+        if ciclo.is_multiple_of(CICLOS_ENTRE_REPORTES_DE_PREFIJOS) {
+            let protocolos = state.last_protocols.clone();
+            report_prefixes(&core_client, &bird_manager, &protocolos).await;
+        }
+        ciclo = ciclo.wrapping_add(1);
+
         send_heartbeat(&core_client, &state, bird_is_running, bird_uptime).await;
 
         tokio::select! {

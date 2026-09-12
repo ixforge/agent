@@ -275,3 +275,81 @@ fn test_parse_bird_uptime_raw_socket() {
     let uptime = parse_bird_uptime(BIRD_STATUS_RAW_SOCKET).unwrap();
     assert!((uptime - 1800.0).abs() < 0.01);
 }
+
+// ---------------------------------------------------------------------------
+// Rutas por peer
+// ---------------------------------------------------------------------------
+
+const SALIDA_RUTAS: &str = "\
+1007-Table t_APO_45_170_101_11_v4:
+1007-45.238.179.0/24      unicast [pb_APO_45_170_101_11_v4 2026-09-12 15:33:06] * (100) [AS273973i]
+1008-\tvia 45.170.101.11 on eth1
+1012-\tType: BGP univ
+1012-\tBGP.origin: IGP
+1012-\tBGP.as_path: 273973
+1012-\tBGP.next_hop: 45.170.101.11
+1012-\tBGP.community: (64166,65012) (64166,65120)
+1007-45.170.100.0/24      unicast [pb_APO_45_170_101_11_v4 2026-09-12 15:33:06] * (100) [AS273973i]
+1008-\tvia 45.170.101.11 on eth1
+1012-\tType: BGP univ
+1012-\tBGP.as_path: 64500 273973
+0000 ";
+
+#[test]
+fn extrae_el_prefijo_y_el_as_path_de_cada_ruta() {
+    let rutas = ixforge_agent::bird::parser::parse_routes(SALIDA_RUTAS);
+
+    assert_eq!(rutas.len(), 2);
+    assert_eq!(rutas[0].prefix, "45.238.179.0/24");
+    assert_eq!(rutas[0].as_path, vec![273973]);
+    assert_eq!(rutas[1].prefix, "45.170.100.0/24");
+    assert_eq!(rutas[1].as_path, vec![64500, 273973]);
+}
+
+#[test]
+fn una_ruta_sin_as_path_igual_se_reporta() {
+    // Una ruta estatica o con el atributo ausente sigue siendo un prefijo que
+    // el peer anuncia. Descartarla la haria invisible en el sitio
+    let salida = "\
+1007-Table t_x:
+1007-192.0.2.0/24         unicast [pb_x 2026-09-12 15:33:06] * (100) [i]
+1008-\tvia 10.0.0.1 on eth1
+0000 ";
+    let rutas = ixforge_agent::bird::parser::parse_routes(salida);
+
+    assert_eq!(rutas.len(), 1);
+    assert_eq!(rutas[0].prefix, "192.0.2.0/24");
+    assert!(rutas[0].as_path.is_empty());
+}
+
+#[test]
+fn parsea_prefijos_ipv6() {
+    let salida = "\
+1007-Table t_x:
+1007-2803:30d0:4958::/48  unicast [pb_x 2026-09-12 15:33:06] * (100) [AS273973i]
+1012-\tBGP.as_path: 273973
+0000 ";
+    let rutas = ixforge_agent::bird::parser::parse_routes(salida);
+
+    assert_eq!(rutas.len(), 1);
+    assert_eq!(rutas[0].prefix, "2803:30d0:4958::/48");
+}
+
+#[test]
+fn una_salida_vacia_no_da_rutas() {
+    assert!(ixforge_agent::bird::parser::parse_routes("0000 ").is_empty());
+}
+
+#[test]
+fn el_as_path_con_basura_no_rompe_el_parseo() {
+    // Defensivo: lo que no es un numero se descarta, la ruta se conserva
+    let salida = "\
+1007-Table t_x:
+1007-192.0.2.0/24         unicast [pb_x 2026-09-12 15:33:06] * (100) [AS1i]
+1012-\tBGP.as_path: 273973 {64500} basura
+0000 ";
+    let rutas = ixforge_agent::bird::parser::parse_routes(salida);
+
+    assert_eq!(rutas.len(), 1);
+    assert_eq!(rutas[0].as_path, vec![273973]);
+}

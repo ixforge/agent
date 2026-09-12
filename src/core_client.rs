@@ -40,6 +40,34 @@ pub struct StatusReport {
     pub sessions: Vec<BgpSessionState>,
 }
 
+/// Un prefijo que el peer anuncia, con su camino
+#[derive(Debug, Clone, Serialize)]
+pub struct RoutePrefix {
+    pub prefix: String,
+    pub as_path: Vec<u32>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SessionPrefixes {
+    pub peer_ip: String,
+    pub af: u8,
+    pub prefixes: Vec<RoutePrefix>,
+}
+
+/// Va aparte del reporte de estado: el dump de rutas es caro y los prefijos
+/// casi no se mueven, asi que tiene su propio ciclo mas lento
+#[derive(Debug, Clone, Serialize)]
+pub struct PrefixReport {
+    pub sessions: Vec<SessionPrefixes>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PrefixReportResponse {
+    pub sessions_updated: u32,
+    pub prefixes_added: u32,
+    pub prefixes_removed: u32,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct BirdInstanceStatus {
     pub name: String,
@@ -149,6 +177,24 @@ impl CoreClient {
         let resp = self
             .http
             .post(self.agent_url("/status"))
+            .json(report)
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(AgentError::CoreApi(format!("{status}: {body}")));
+        }
+        resp.json().await.map_err(AgentError::Http)
+    }
+
+    pub async fn report_prefixes(
+        &self,
+        report: &PrefixReport,
+    ) -> Result<PrefixReportResponse, AgentError> {
+        let resp = self
+            .http
+            .post(self.agent_url("/prefixes"))
             .json(report)
             .send()
             .await?;

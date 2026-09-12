@@ -4,7 +4,9 @@ use tokio::process::Command;
 use tracing::info;
 
 use super::BirdClient;
-use crate::bird::parser::{BirdProtocol, parse_bird_uptime, parse_protocols};
+use crate::bird::parser::{
+    BirdProtocol, BirdRoute, parse_bird_uptime, parse_protocols, parse_routes,
+};
 use crate::error::AgentError;
 
 pub struct BirdManager<C: BirdClient> {
@@ -72,6 +74,29 @@ impl<C: BirdClient> BirdManager<C> {
         Ok(parse_protocols(&output))
     }
 
+    /// Get the routes a peer is advertising, from `show route protocol <name> all`
+    ///
+    /// The protocol name goes into a control-socket command, so it is checked
+    /// against what BIRD accepts in a symbol: anything else comes from a
+    /// tampered config and is refused rather than sent
+    pub async fn get_routes(&self, protocol: &str) -> Result<Vec<BirdRoute>, AgentError> {
+        if protocol.is_empty()
+            || !protocol
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            return Err(AgentError::BirdCommand(format!(
+                "protocol name is not a BIRD symbol: {protocol:?}"
+            )));
+        }
+
+        let output = self
+            .client
+            .send_command(&format!("show route protocol {protocol} all"))
+            .await?;
+        Ok(parse_routes(&output))
+    }
+
     /// Get BIRD uptime in seconds by parsing `show status` output
     pub async fn get_uptime(&self) -> Option<f64> {
         let output = self.client.send_command("show status").await.ok()?;
@@ -113,18 +138,21 @@ mod tests {
 
     struct MockClient {
         response: Mutex<String>,
+        ultimo_comando: Mutex<String>,
     }
 
     impl MockClient {
         fn with_response(response: &str) -> Self {
             Self {
                 response: Mutex::new(response.to_string()),
+                ultimo_comando: Mutex::new(String::new()),
             }
         }
     }
 
     impl BirdClient for MockClient {
-        async fn send_command(&self, _command: &str) -> Result<String, AgentError> {
+        async fn send_command(&self, command: &str) -> Result<String, AgentError> {
+            *self.ultimo_comando.lock().unwrap() = command.to_string();
             Ok(self.response.lock().unwrap().clone())
         }
 
@@ -159,5 +187,41 @@ mod tests {
     async fn apply_config_rejects_errors() {
         let m = manager("8002 /etc/bird/bird.conf, line 5: syntax error\n");
         assert!(m.apply_config().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn get_routes_pide_las_rutas_de_ese_protocolo() {
+        let salida = concat!(
+            "1007-Table t_x:\n",
+            "1007-192.0.2.0/24         unicast [pb_x 2026-09-12 15:33:06] * (100) [AS1i]\n",
+            "1012-\tBGP.as_path: 273973\n",
+            "0000 "
+        );
+        let m = manager(salida);
+
+        let rutas = m.get_routes("pb_APO_45_170_101_11_v4").await.unwrap();
+
+        assert_eq!(rutas.len(), 1);
+        assert_eq!(rutas[0].prefix, "192.0.2.0/24");
+        assert_eq!(rutas[0].as_path, vec![273973]);
+        assert_eq!(
+            *m.client.ultimo_comando.lock().unwrap(),
+            "show route protocol pb_APO_45_170_101_11_v4 all"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_routes_rechaza_un_nombre_que_no_es_de_bird() {
+        // El nombre entra en un comando del socket de control. BIRD solo acepta
+        // letras, digitos y guion bajo en un simbolo, asi que cualquier otra
+        // cosa viene de un config manipulado y no se manda
+        let m = manager("0000 ");
+
+        for malo in ["pb_x\nshow status", "pb x", "pb_x; drop", ""] {
+            assert!(
+                m.get_routes(malo).await.is_err(),
+                "deberia rechazar {malo:?}"
+            );
+        }
     }
 }

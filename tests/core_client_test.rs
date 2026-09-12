@@ -1,6 +1,7 @@
 use ixforge_agent::config::Secret;
 use ixforge_agent::core_client::{
-    BgpSessionState, BirdInstanceStatus, ConfigApplied, CoreClient, Heartbeat, StatusReport,
+    BgpSessionState, BirdInstanceStatus, ConfigApplied, CoreClient, Heartbeat, PrefixReport,
+    RoutePrefix, SessionPrefixes, StatusReport,
 };
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -233,4 +234,65 @@ fn el_conteo_ausente_se_serializa_como_null() {
 
     let json = serde_json::to_value(&estado).expect("serializa");
     assert!(json["prefixes_imported"].is_null());
+}
+
+// ---------------------------------------------------------------------------
+// Reporte de prefijos por sesion
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn reporta_los_prefijos_de_cada_sesion() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(format!(
+            "/api/v1/route-servers/{RS_ID}/agent/prefixes"
+        )))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "sessions_updated": 1,
+            "prefixes_added": 2,
+            "prefixes_removed": 0,
+        })))
+        .mount(&server)
+        .await;
+
+    let client = make_client(&server.uri());
+    let reporte = PrefixReport {
+        sessions: vec![SessionPrefixes {
+            peer_ip: "45.170.101.11".into(),
+            af: 4,
+            prefixes: vec![
+                RoutePrefix {
+                    prefix: "45.238.179.0/24".into(),
+                    as_path: vec![273973],
+                },
+                RoutePrefix {
+                    prefix: "45.170.100.0/24".into(),
+                    as_path: vec![273973],
+                },
+            ],
+        }],
+    };
+
+    let resp = client.report_prefixes(&reporte).await.unwrap();
+    assert_eq!(resp.prefixes_added, 2);
+}
+
+#[test]
+fn el_reporte_de_prefijos_se_serializa_como_lo_espera_el_core() {
+    let reporte = PrefixReport {
+        sessions: vec![SessionPrefixes {
+            peer_ip: "45.170.101.11".into(),
+            af: 4,
+            prefixes: vec![RoutePrefix {
+                prefix: "45.238.179.0/24".into(),
+                as_path: vec![64500, 273973],
+            }],
+        }],
+    };
+
+    let j: serde_json::Value = serde_json::to_value(&reporte).unwrap();
+    assert_eq!(j["sessions"][0]["peer_ip"], "45.170.101.11");
+    assert_eq!(j["sessions"][0]["af"], 4);
+    assert_eq!(j["sessions"][0]["prefixes"][0]["prefix"], "45.238.179.0/24");
+    assert_eq!(j["sessions"][0]["prefixes"][0]["as_path"][0], 64500);
 }
