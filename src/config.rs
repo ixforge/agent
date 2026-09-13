@@ -55,9 +55,9 @@ pub struct BirdConfig {
     pub socket_timeout_secs: u64,
     /// Tope de una respuesta del socket de BIRD, en MB
     ///
-    /// El dump de rutas del upstream pasa de 45 MB y el tope viejo de 16 lo
-    /// cortaba. Sigue existiendo para que un BIRD que nunca mande el marcador
-    /// de fin no haga crecer la memoria sin limite
+    /// Tiene que alcanzar para el dump de rutas del peer mas grande: una tabla
+    /// nacional pasa de 45 MB. Existe para que un BIRD que nunca mande el
+    /// marcador de fin no haga crecer la memoria sin limite
     #[serde(default = "default_max_response_mb")]
     pub max_response_mb: usize,
 }

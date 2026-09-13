@@ -166,8 +166,8 @@ format = "json"
 
 #[test]
 fn el_tope_de_respuesta_de_bird_es_configurable() {
-    // El dump de rutas del upstream pasa de 45 MB, muy por encima del tope
-    // original de 16 MiB, y una tabla mas grande lo va a volver a pasar
+    // El dump de rutas de una tabla nacional pasa de 45 MB, y una tabla mas
+    // grande va a pedir mas: el tope se ajusta sin recompilar
     let toml = r#"
 [core]
 url = "http://localhost:8000"

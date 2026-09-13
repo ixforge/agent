@@ -305,7 +305,7 @@ pub fn parse_routes(output: &str) -> Vec<BirdRoute> {
         };
         // El tipo de ruta no siempre es unicast: las del upstream llegan como
         // unreachable porque el route server no tiene next hop hacia ellas, y
-        // exigir unicast las descartaba todas
+        // tambien son rutas que el peer anuncia
         let es_ruta = prefix.contains('/')
             && resto.split_whitespace().next().is_some_and(|t| {
                 matches!(t, "unicast" | "unreachable" | "blackhole" | "prohibited")

@@ -429,7 +429,7 @@ fn los_atributos_no_se_confunden_con_rutas() {
 
 /// Las rutas del upstream llegan como unreachable, no unicast: el route server
 /// no tiene next hop directo hacia ellas. Un parser que solo mire unicast las
-/// descarta todas, que es lo que pasaba
+/// descarta todas
 const SALIDA_UPSTREAM: &str = concat!(
     "1007-Table t_UPSTREAM:\n",
     " 181.123.200.0/22     unreachable [pb_UP 2026-09-12 21:28:19 from 45.170.101.5] * (100) [AS23201?]\n",
@@ -453,8 +453,8 @@ fn las_rutas_unreachable_tambien_son_rutas() {
 
 #[test]
 fn una_linea_de_atributo_con_barra_no_es_una_ruta() {
-    // Defensivo: el filtro ya no exige "unicast", asi que tiene que seguir
-    // distinguiendo una ruta de un atributo cualquiera que traiga una barra
+    // Defensivo: el filtro acepta varios tipos de ruta, asi que tiene que
+    // distinguir una ruta de un atributo cualquiera que traiga una barra
     let salida = concat!(
         "1007-Table t_x:\n",
         " 192.0.2.0/24         unicast [pb_x 2026-09-12 15:33:06] * (100) [AS1i]\n",

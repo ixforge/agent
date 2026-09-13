@@ -10,9 +10,9 @@ use crate::error::AgentError;
 
 /// Tope por defecto de una respuesta del socket de BIRD
 ///
-/// El dump de rutas del upstream pasa de 45 MB, asi que 16 MiB cortaba la
-/// lectura. El tope sigue existiendo para que un BIRD que nunca mande el
-/// marcador de fin no haga crecer la memoria sin limite
+/// Alcanza para el dump de rutas de una tabla nacional, que pasa de 45 MB, y
+/// existe para que un BIRD que nunca mande el marcador de fin no haga crecer la
+/// memoria sin limite
 const MAX_RESPONSE_MB_POR_DEFECTO: usize = 128;
 
 pub struct BirdSocketClient {
