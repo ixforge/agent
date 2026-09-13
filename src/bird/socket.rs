@@ -8,22 +8,29 @@ use tracing::trace;
 use super::BirdClient;
 use crate::error::AgentError;
 
-/// Hard cap on the size of a single BIRD response. BIRD can emit large
-/// `show route` dumps, but 16 MiB is far above any legitimate control-plane
-/// reply and protects the agent from unbounded memory growth if BIRD
-/// misbehaves or never sends an end-marker.
-const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
+/// Tope por defecto de una respuesta del socket de BIRD
+///
+/// El dump de rutas del upstream pasa de 45 MB, asi que 16 MiB cortaba la
+/// lectura. El tope sigue existiendo para que un BIRD que nunca mande el
+/// marcador de fin no haga crecer la memoria sin limite
+const MAX_RESPONSE_MB_POR_DEFECTO: usize = 128;
 
 pub struct BirdSocketClient {
     socket_path: PathBuf,
     timeout: Duration,
+    max_response_bytes: usize,
 }
 
 impl BirdSocketClient {
     pub fn new(socket_path: &str, timeout_secs: u64) -> Self {
+        Self::with_max_response(socket_path, timeout_secs, MAX_RESPONSE_MB_POR_DEFECTO)
+    }
+
+    pub fn with_max_response(socket_path: &str, timeout_secs: u64, max_mb: usize) -> Self {
         Self {
             socket_path: PathBuf::from(socket_path),
             timeout: Duration::from_secs(timeout_secs),
+            max_response_bytes: max_mb * 1024 * 1024,
         }
     }
 }
@@ -84,9 +91,10 @@ impl BirdSocketClient {
             if n == 0 {
                 break;
             }
-            if response.len().saturating_add(n) > MAX_RESPONSE_BYTES {
+            if response.len().saturating_add(n) > self.max_response_bytes {
                 return Err(AgentError::BirdSocket(format!(
-                    "response exceeded {MAX_RESPONSE_BYTES} bytes without end marker"
+                    "response exceeded {} bytes without end marker",
+                    self.max_response_bytes
                 )));
             }
             response.push_str(&String::from_utf8_lossy(&buf[..n]));

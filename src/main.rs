@@ -348,8 +348,11 @@ async fn main() {
         }
     };
 
-    let bird_socket =
-        BirdSocketClient::new(&config.bird.socket_path, config.bird.socket_timeout_secs);
+    let bird_socket = BirdSocketClient::with_max_response(
+        &config.bird.socket_path,
+        config.bird.socket_timeout_secs,
+        config.bird.max_response_mb,
+    );
     let bird_manager = BirdManager::new(
         bird_socket,
         &config.bird.config_path,

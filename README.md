@@ -55,7 +55,8 @@ poll_interval_secs = 30
 socket_path = "/run/bird/bird.ctl"
 config_path = "/etc/bird/bird.conf"
 bird_binary = "/usr/sbin/bird"     # opcional, default /usr/sbin/bird (usado para bird -p)
-socket_timeout_secs = 30           # opcional, default 30
+socket_timeout_secs = 30
+max_response_mb = 128   # tope de una respuesta del socket: el dump del upstream pasa de 45 MB           # opcional, default 30
 
 [metrics]
 listen = "0.0.0.0:9100"

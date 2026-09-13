@@ -163,3 +163,58 @@ format = "json"
     let result = AgentConfig::from_file(f.path());
     assert!(result.is_err());
 }
+
+#[test]
+fn el_tope_de_respuesta_de_bird_es_configurable() {
+    // El dump de rutas del upstream pasa de 45 MB, muy por encima del tope
+    // original de 16 MiB, y una tabla mas grande lo va a volver a pasar
+    let toml = r#"
+[core]
+url = "http://localhost:8000"
+route_server_id = "550e8400-e29b-41d4-a716-446655440000"
+api_key = "k"
+
+[bird]
+socket_path = "/run/bird/bird.ctl"
+config_path = "/etc/bird/bird.conf"
+max_response_mb = 256
+
+[metrics]
+listen = "127.0.0.1:9100"
+
+[logging]
+level = "info"
+format = "json"
+"#;
+    let cfg: AgentConfig = toml::from_str(toml).unwrap();
+
+    assert_eq!(cfg.bird.max_response_mb, 256);
+}
+
+#[test]
+fn sin_configurar_el_tope_alcanza_para_una_tabla_nacional() {
+    let toml = r#"
+[core]
+url = "http://localhost:8000"
+route_server_id = "550e8400-e29b-41d4-a716-446655440000"
+api_key = "k"
+
+[bird]
+socket_path = "/run/bird/bird.ctl"
+config_path = "/etc/bird/bird.conf"
+
+[metrics]
+listen = "127.0.0.1:9100"
+
+[logging]
+level = "info"
+format = "json"
+"#;
+    let cfg: AgentConfig = toml::from_str(toml).unwrap();
+
+    assert!(
+        cfg.bird.max_response_mb >= 128,
+        "el default no alcanza para el dump del upstream: {}",
+        cfg.bird.max_response_mb
+    );
+}

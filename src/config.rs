@@ -53,6 +53,13 @@ pub struct BirdConfig {
     pub bird_binary: String,
     #[serde(default = "default_socket_timeout")]
     pub socket_timeout_secs: u64,
+    /// Tope de una respuesta del socket de BIRD, en MB
+    ///
+    /// El dump de rutas del upstream pasa de 45 MB y el tope viejo de 16 lo
+    /// cortaba. Sigue existiendo para que un BIRD que nunca mande el marcador
+    /// de fin no haga crecer la memoria sin limite
+    #[serde(default = "default_max_response_mb")]
+    pub max_response_mb: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -75,6 +82,10 @@ fn default_poll_interval() -> u64 {
 
 fn default_bird_binary() -> String {
     "/usr/sbin/bird".to_string()
+}
+
+fn default_max_response_mb() -> usize {
+    128
 }
 
 fn default_socket_timeout() -> u64 {
