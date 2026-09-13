@@ -135,9 +135,12 @@ impl CoreClient {
                 .map_err(|_| AgentError::Config("invalid API key characters".into()))?,
         );
 
+        // 30 segundos alcanzaban para reportar estado, pero no para mandar los
+        // mas de 120 mil prefijos del upstream: son 21 MB que el Core ademas
+        // tiene que diffear antes de contestar
         let mut builder = reqwest::Client::builder()
             .default_headers(headers)
-            .timeout(std::time::Duration::from_secs(30));
+            .timeout(std::time::Duration::from_secs(180));
 
         if let Some(ca_path) = ca_cert_path {
             let ca_bytes = std::fs::read(ca_path).map_err(|e| AgentError::io(ca_path, e))?;
