@@ -426,3 +426,45 @@ fn los_atributos_no_se_confunden_con_rutas() {
     // via, Type, BGP.origin y BGP.next_hop no son prefijos
     assert!(rutas.iter().all(|r| r.prefix.contains('/')));
 }
+
+/// Las rutas del upstream llegan como unreachable, no unicast: el route server
+/// no tiene next hop directo hacia ellas. Un parser que solo mire unicast las
+/// descarta todas, que es lo que pasaba
+const SALIDA_UPSTREAM: &str = concat!(
+    "1007-Table t_UPSTREAM:\n",
+    " 181.123.200.0/22     unreachable [pb_UP 2026-09-12 21:28:19 from 45.170.101.5] * (100) [AS23201?]\n",
+    " \tType: BGP univ\n",
+    " \tBGP.as_path: 61522 23201\n",
+    " \tBGP.community: (61522,65012) (61522,65120) (64166,65180)\n",
+    "1007-58.69.253.0/24       unreachable [pb_UP 2026-09-12 22:20:06 from 45.170.101.5] * (100) [AS36776i]\n",
+    "1012-\tBGP.as_path: 61522 36776\n",
+    "0000 "
+);
+
+#[test]
+fn las_rutas_unreachable_tambien_son_rutas() {
+    let rutas = ixforge_agent::bird::parser::parse_routes(SALIDA_UPSTREAM);
+
+    assert_eq!(rutas.len(), 2, "se descartaron rutas: {rutas:?}");
+    assert_eq!(rutas[0].prefix, "181.123.200.0/22");
+    assert_eq!(rutas[0].as_path, vec![61522, 23201]);
+    assert_eq!(rutas[1].prefix, "58.69.253.0/24");
+}
+
+#[test]
+fn una_linea_de_atributo_con_barra_no_es_una_ruta() {
+    // Defensivo: el filtro ya no exige "unicast", asi que tiene que seguir
+    // distinguiendo una ruta de un atributo cualquiera que traiga una barra
+    let salida = concat!(
+        "1007-Table t_x:\n",
+        " 192.0.2.0/24         unicast [pb_x 2026-09-12 15:33:06] * (100) [AS1i]\n",
+        "1012-\tBGP.next_hop: 45.170.101.5\n",
+        "1012-\tsomething: a/b c\n",
+        "0000 "
+    );
+
+    let rutas = ixforge_agent::bird::parser::parse_routes(salida);
+
+    assert_eq!(rutas.len(), 1);
+    assert_eq!(rutas[0].prefix, "192.0.2.0/24");
+}

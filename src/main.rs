@@ -197,10 +197,10 @@ async fn report_bgp_status(
 
 /// Tope de prefijos por sesion que se listan uno por uno
 ///
-/// Arriba de esto solo va el conteo. Deja fuera al transito sin que el agente
-/// tenga que saber quien es miembro: un peer de transito trae cientos de miles
-/// de rutas y listarlas no le sirve a nadie
-const MAX_PREFIJOS_POR_SESION: u32 = 1000;
+/// Alto a proposito: un upstream trae la tabla que agrega y esos prefijos
+/// tambien se muestran. El tope existe para que una sesion que se vuelve loca
+/// no genere un reporte sin fondo, no para excluir al transito
+const MAX_PREFIJOS_POR_SESION: u32 = 500_000;
 
 /// Cada cuantos ciclos se reportan los prefijos
 ///
@@ -261,13 +261,18 @@ async fn report_prefixes(
         });
     }
 
-    if sessions.is_empty() {
-        return;
-    }
-
-    let report = PrefixReport { sessions };
-    if let Err(e) = core_client.report_prefixes(&report).await {
-        warn!(error = %e, "failed to report prefixes");
+    // Una sesion por request. La del upstream son mas de 20 MB de JSON, y
+    // mandarlas todas juntas seria un solo cuerpo enorme que ademas el Core
+    // tendria que diffear entero antes de contestar
+    for sesion in sessions {
+        let cuantos = sesion.prefixes.len();
+        let peer = sesion.peer_ip.clone();
+        let report = PrefixReport {
+            sessions: vec![sesion],
+        };
+        if let Err(e) = core_client.report_prefixes(&report).await {
+            warn!(peer = %peer, prefixes = cuantos, error = %e, "failed to report prefixes");
+        }
     }
 }
 
