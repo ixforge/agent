@@ -87,6 +87,12 @@ Servidos en la direccion de `[metrics] listen` (campo requerido; en el ejemplo `
 Si BIRD no esta corriendo el agent no se cae: el health reporta `bird.running:false`,
 sigue enviando heartbeats y reintenta aplicar config en cada ciclo.
 
+Si la configuracion se aplica en BIRD pero falla la confirmacion al Core, el agent
+reintenta confirmarla en cada ciclo sin volver a aplicar la misma configuracion,
+incluso si falla la consulta de configuracion. Una nueva configuracion solo
+reemplaza la confirmacion pendiente cuando se aplica correctamente. El pendiente
+vive en memoria: al reiniciar, el agent vuelve a consultar y aplicar la configuracion.
+
 ## Desarrollo
 
 Requiere toolchain Rust >= 1.91 (edition 2024).

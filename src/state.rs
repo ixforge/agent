@@ -4,6 +4,7 @@ use crate::bird::parser::BirdProtocol;
 
 pub struct AgentState {
     pub current_config_hash: Option<String>,
+    pub pending_config_confirmation: Option<String>,
     pub started_at: Instant,
     pub last_protocols: Vec<BirdProtocol>,
 }
@@ -12,6 +13,7 @@ impl AgentState {
     pub fn new() -> Self {
         Self {
             current_config_hash: None,
+            pending_config_confirmation: None,
             started_at: Instant::now(),
             last_protocols: Vec::new(),
         }

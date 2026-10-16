@@ -9,13 +9,14 @@ use tokio::net::TcpListener;
 use tokio::time::{Duration, sleep};
 use tracing::{debug, error, info, warn};
 
+use ixforge_agent::bird::BirdClient;
 use ixforge_agent::bird::manager::BirdManager;
 use ixforge_agent::bird::parser::BgpState;
 use ixforge_agent::bird::socket::BirdSocketClient;
 use ixforge_agent::config::AgentConfig;
 use ixforge_agent::core_client::{
-    BgpSessionState, BirdInstanceStatus, ConfigApplied, ConfigFailed, CoreClient, Heartbeat,
-    PrefixReport, RoutePrefix, SessionPrefixes, StatusReport,
+    BgpSessionState, BirdInstanceStatus, ConfigApplied, ConfigFailed, ConfigResponse, CoreClient,
+    Heartbeat, PrefixReport, RoutePrefix, SessionPrefixes, StatusReport,
 };
 use ixforge_agent::error::AgentError;
 use ixforge_agent::metrics::registry::MetricsRegistry;
@@ -64,10 +65,67 @@ async fn shutdown_signal() {
     }
 }
 
-/// Poll config from Core, validate, and apply if changed.
-async fn poll_and_apply_config(
-    core_client: &CoreClient,
-    bird_manager: &BirdManager<BirdSocketClient>,
+trait ConfigClient {
+    fn get_config(&self) -> impl std::future::Future<Output = Result<ConfigResponse, AgentError>>;
+    fn confirm_config_applied(
+        &self,
+        applied: &ConfigApplied,
+    ) -> impl std::future::Future<Output = Result<(), AgentError>>;
+    fn report_config_failed(
+        &self,
+        failed: &ConfigFailed,
+    ) -> impl std::future::Future<Output = Result<(), AgentError>>;
+}
+
+impl ConfigClient for CoreClient {
+    async fn get_config(&self) -> Result<ConfigResponse, AgentError> {
+        CoreClient::get_config(self).await
+    }
+
+    async fn confirm_config_applied(&self, applied: &ConfigApplied) -> Result<(), AgentError> {
+        CoreClient::confirm_config_applied(self, applied).await
+    }
+
+    async fn report_config_failed(&self, failed: &ConfigFailed) -> Result<(), AgentError> {
+        CoreClient::report_config_failed(self, failed).await
+    }
+}
+
+/// Poll config from Core, validate, and apply if changed
+async fn poll_and_apply_config<C: BirdClient>(
+    core_client: &impl ConfigClient,
+    bird_manager: &BirdManager<C>,
+    state: &mut AgentState,
+    metrics: &MetricsRegistry,
+    bird_config: &ixforge_agent::config::BirdConfig,
+    core_connected: &AtomicBool,
+) {
+    fetch_and_apply_config(
+        core_client,
+        bird_manager,
+        state,
+        metrics,
+        bird_config,
+        core_connected,
+    )
+    .await;
+
+    if let Some(config_hash) = state.pending_config_confirmation.as_ref() {
+        let applied = ConfigApplied {
+            config_hash: config_hash.clone(),
+        };
+        match core_client.confirm_config_applied(&applied).await {
+            Ok(()) => state.pending_config_confirmation = None,
+            Err(e) => {
+                warn!(error = %e, config_hash = %config_hash, "failed to confirm config applied")
+            }
+        }
+    }
+}
+
+async fn fetch_and_apply_config<C: BirdClient>(
+    core_client: &impl ConfigClient,
+    bird_manager: &BirdManager<C>,
     state: &mut AgentState,
     metrics: &MetricsRegistry,
     bird_config: &ixforge_agent::config::BirdConfig,
@@ -121,20 +179,15 @@ async fn poll_and_apply_config(
     state.current_config_hash = Some(config_resp.config_hash.clone());
     metrics.set_config_applied(&config_resp.config_hash);
 
-    let applied = ConfigApplied {
-        config_hash: config_resp.config_hash,
-    };
-    if let Err(e) = core_client.confirm_config_applied(&applied).await {
-        warn!(error = %e, "failed to confirm config applied");
-    }
+    state.pending_config_confirmation = Some(config_resp.config_hash);
 }
 
 /// Write temp file (fsynced), validate with `bird -p`, atomically rename
 /// into place, then apply via socket. The rename is atomic within a single
 /// filesystem, so a crash between validation and apply cannot leave the
 /// live config partially written.
-async fn write_validate_apply(
-    bird_manager: &BirdManager<BirdSocketClient>,
+async fn write_validate_apply<C: BirdClient>(
+    bird_manager: &BirdManager<C>,
     content: &str,
     temp_path: &str,
 ) -> Result<(), AgentError> {
@@ -430,4 +483,233 @@ async fn main() {
     }
 
     info!("ixforge-agent stopped");
+}
+
+#[cfg(test)]
+mod config_poll_tests {
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+    use std::sync::atomic::AtomicUsize;
+
+    use super::*;
+    use ixforge_agent::config::BirdConfig;
+
+    struct CoreStub {
+        configs: Mutex<VecDeque<Result<ConfigResponse, AgentError>>>,
+        confirmation_failures: AtomicUsize,
+        confirmations: Mutex<Vec<String>>,
+        failures: Mutex<Vec<String>>,
+    }
+
+    impl CoreStub {
+        fn new(configs: Vec<Result<ConfigResponse, AgentError>>, failures: usize) -> Self {
+            Self {
+                configs: Mutex::new(configs.into()),
+                confirmation_failures: AtomicUsize::new(failures),
+                confirmations: Mutex::new(Vec::new()),
+                failures: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl ConfigClient for CoreStub {
+        async fn get_config(&self) -> Result<ConfigResponse, AgentError> {
+            self.configs.lock().unwrap().pop_front().unwrap()
+        }
+
+        async fn confirm_config_applied(&self, applied: &ConfigApplied) -> Result<(), AgentError> {
+            self.confirmations
+                .lock()
+                .unwrap()
+                .push(applied.config_hash.clone());
+            if self
+                .confirmation_failures
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1))
+                .is_ok()
+            {
+                return Err(AgentError::CoreApi("confirmation unavailable".into()));
+            }
+            Ok(())
+        }
+
+        async fn report_config_failed(&self, failed: &ConfigFailed) -> Result<(), AgentError> {
+            self.failures
+                .lock()
+                .unwrap()
+                .push(failed.config_hash.clone());
+            Ok(())
+        }
+    }
+
+    struct BirdStub {
+        configure_calls: Arc<AtomicUsize>,
+        fail_configure: Arc<AtomicBool>,
+    }
+
+    impl BirdClient for BirdStub {
+        async fn send_command(&self, command: &str) -> Result<String, AgentError> {
+            assert_eq!(command, "configure");
+            self.configure_calls.fetch_add(1, Ordering::Relaxed);
+            if self.fail_configure.load(Ordering::Relaxed) {
+                return Err(AgentError::BirdCommand("configure rejected".into()));
+            }
+            Ok("0003 Reconfigured\n".into())
+        }
+
+        async fn is_running(&self) -> bool {
+            true
+        }
+    }
+
+    struct PollFixture {
+        _dir: tempfile::TempDir,
+        bird_config: BirdConfig,
+        bird: BirdManager<BirdStub>,
+        configure_calls: Arc<AtomicUsize>,
+        fail_configure: Arc<AtomicBool>,
+        state: AgentState,
+        metrics: Arc<MetricsRegistry>,
+        connected: AtomicBool,
+    }
+
+    impl PollFixture {
+        fn new(binary: &str) -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let config_path = dir.path().join("bird.conf").to_str().unwrap().to_string();
+            let bird_config = BirdConfig {
+                socket_path: "/unused".into(),
+                config_path,
+                bird_binary: binary.into(),
+                socket_timeout_secs: 1,
+                max_response_mb: 1,
+            };
+            let configure_calls = Arc::new(AtomicUsize::new(0));
+            let fail_configure = Arc::new(AtomicBool::new(false));
+            let bird = BirdManager::new(
+                BirdStub {
+                    configure_calls: configure_calls.clone(),
+                    fail_configure: fail_configure.clone(),
+                },
+                &bird_config.config_path,
+                binary,
+            );
+            Self {
+                _dir: dir,
+                bird_config,
+                bird,
+                configure_calls,
+                fail_configure,
+                state: AgentState::new(),
+                metrics: MetricsRegistry::new(),
+                connected: AtomicBool::new(false),
+            }
+        }
+
+        async fn poll(&mut self, core: &CoreStub) {
+            poll_and_apply_config(
+                core,
+                &self.bird,
+                &mut self.state,
+                &self.metrics,
+                &self.bird_config,
+                &self.connected,
+            )
+            .await;
+        }
+    }
+
+    fn config(hash: &str) -> Result<ConfigResponse, AgentError> {
+        Ok(ConfigResponse {
+            config_hash: hash.into(),
+            content: format!("# config {hash}\n"),
+            generated_at: chrono::Utc::now(),
+        })
+    }
+
+    #[tokio::test]
+    async fn retries_confirmation_without_reapplying_and_stops_after_success() {
+        let core = CoreStub::new(vec![config("a"), config("a"), config("a"), config("a")], 2);
+        let mut fixture = PollFixture::new("/bin/true");
+
+        for _ in 0..4 {
+            fixture.poll(&core).await;
+        }
+
+        assert_eq!(*core.confirmations.lock().unwrap(), ["a", "a", "a"]);
+        assert_eq!(fixture.configure_calls.load(Ordering::Relaxed), 1);
+        assert_eq!(fixture.state.current_config_hash.as_deref(), Some("a"));
+        assert_eq!(
+            std::fs::read_to_string(&fixture.bird_config.config_path).unwrap(),
+            "# config a\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn retries_confirmation_even_when_config_fetch_fails() {
+        let core = CoreStub::new(
+            vec![
+                config("a"),
+                Err(AgentError::CoreApi("GET unavailable".into())),
+            ],
+            1,
+        );
+        let mut fixture = PollFixture::new("/bin/true");
+
+        fixture.poll(&core).await;
+        fixture.poll(&core).await;
+
+        assert_eq!(*core.confirmations.lock().unwrap(), ["a", "a"]);
+        assert_eq!(fixture.configure_calls.load(Ordering::Relaxed), 1);
+        assert!(!fixture.connected.load(Ordering::Relaxed));
+        assert_eq!(fixture.metrics.poll_errors_total.get(), 1);
+    }
+
+    #[tokio::test]
+    async fn failed_new_config_keeps_retrying_confirmation_of_last_applied_config() {
+        let core = CoreStub::new(vec![config("a"), config("b"), config("a")], 1);
+        let mut fixture = PollFixture::new("/bin/true");
+
+        fixture.poll(&core).await;
+        fixture.fail_configure.store(true, Ordering::Relaxed);
+        fixture.poll(&core).await;
+        fixture.poll(&core).await;
+
+        assert_eq!(*core.confirmations.lock().unwrap(), ["a", "a"]);
+        assert_eq!(*core.failures.lock().unwrap(), ["b"]);
+        assert_eq!(fixture.configure_calls.load(Ordering::Relaxed), 2);
+        assert_eq!(fixture.state.current_config_hash.as_deref(), Some("a"));
+    }
+
+    #[tokio::test]
+    async fn validation_failure_never_confirms_or_installs_config() {
+        let core = CoreStub::new(vec![config("a")], 0);
+        let mut fixture = PollFixture::new("/bin/false");
+
+        fixture.poll(&core).await;
+
+        assert!(core.confirmations.lock().unwrap().is_empty());
+        assert_eq!(*core.failures.lock().unwrap(), ["a"]);
+        assert_eq!(fixture.configure_calls.load(Ordering::Relaxed), 0);
+        assert!(fixture.state.current_config_hash.is_none());
+        assert!(!Path::new(&fixture.bird_config.config_path).exists());
+        assert!(!Path::new(&format!("{}.tmp", fixture.bird_config.config_path)).exists());
+    }
+
+    #[tokio::test]
+    async fn successfully_applied_new_config_replaces_previous_pending_confirmation() {
+        let core = CoreStub::new(vec![config("a"), config("b"), config("b"), config("b")], 2);
+        let mut fixture = PollFixture::new("/bin/true");
+
+        for _ in 0..4 {
+            fixture.poll(&core).await;
+        }
+
+        assert_eq!(*core.confirmations.lock().unwrap(), ["a", "b", "b"]);
+        assert_eq!(fixture.configure_calls.load(Ordering::Relaxed), 2);
+        assert_eq!(fixture.state.current_config_hash.as_deref(), Some("b"));
+        assert_eq!(
+            std::fs::read_to_string(&fixture.bird_config.config_path).unwrap(),
+            "# config b\n"
+        );
+    }
 }
