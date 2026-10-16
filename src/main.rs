@@ -496,7 +496,7 @@ mod config_poll_tests {
 
     struct CoreStub {
         configs: Mutex<VecDeque<Result<ConfigResponse, AgentError>>>,
-        confirmation_failures: AtomicUsize,
+        confirmation_failures: Mutex<usize>,
         confirmations: Mutex<Vec<String>>,
         failures: Mutex<Vec<String>>,
     }
@@ -505,7 +505,7 @@ mod config_poll_tests {
         fn new(configs: Vec<Result<ConfigResponse, AgentError>>, failures: usize) -> Self {
             Self {
                 configs: Mutex::new(configs.into()),
-                confirmation_failures: AtomicUsize::new(failures),
+                confirmation_failures: Mutex::new(failures),
                 confirmations: Mutex::new(Vec::new()),
                 failures: Mutex::new(Vec::new()),
             }
@@ -522,11 +522,9 @@ mod config_poll_tests {
                 .lock()
                 .unwrap()
                 .push(applied.config_hash.clone());
-            if self
-                .confirmation_failures
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1))
-                .is_ok()
-            {
+            let mut remaining = self.confirmation_failures.lock().unwrap();
+            if *remaining > 0 {
+                *remaining -= 1;
                 return Err(AgentError::CoreApi("confirmation unavailable".into()));
             }
             Ok(())
