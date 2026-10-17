@@ -52,6 +52,33 @@ async fn test_metrics_endpoint_returns_prometheus_format() {
 }
 
 #[tokio::test]
+async fn test_poll_errors_counter_has_a_single_total_suffix() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let server_handle = tokio::spawn(async move {
+        ixforge_agent::metrics::server::run_with_listener(listener).await;
+    });
+
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    let body = reqwest::get(format!("http://{addr}/metrics"))
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(
+        body.lines()
+            .any(|line| line.starts_with("ixforge_agent_poll_errors_total ")),
+        "missing ixforge_agent_poll_errors_total sample: {body}"
+    );
+    assert!(!body.contains("_total_total"), "doubled suffix: {body}");
+
+    server_handle.abort();
+}
+
+#[tokio::test]
 async fn test_metrics_include_per_peer_bgp_and_config_info() {
     use ixforge_agent::bird::parser::{BgpState, BirdProtocol};
 

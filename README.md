@@ -142,9 +142,8 @@ dirección, el agent lo registra en el log y sigue funcionando sin endpoints.
   Responde siempre HTTP 200.
 - `GET /metrics`: métricas Prometheus:
   - `ixforge_agent_uptime_seconds`
-  - `ixforge_agent_poll_errors_total_total`: fallos al consultar o aplicar la
-    configuración. El sufijo doble se debe a que `prometheus-client` agrega
-    `_total` al contador, que está registrado como `ixforge_agent_poll_errors_total`
+  - `ixforge_agent_poll_errors_total`: fallos al consultar o aplicar la
+    configuración
   - `ixforge_agent_bgp_sessions_up`, `ixforge_agent_bgp_sessions_total`
   - `ixforge_agent_host_cpu_usage_percent`, `ixforge_agent_host_memory_usage_percent`
   - `ixforge_agent_config_last_applied_timestamp`

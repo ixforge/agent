@@ -49,7 +49,7 @@ impl MetricsRegistry {
 
         let poll_errors_total = Counter::default();
         registry.register(
-            "ixforge_agent_poll_errors_total",
+            "ixforge_agent_poll_errors",
             "Total number of Core API poll errors",
             poll_errors_total.clone(),
         );
