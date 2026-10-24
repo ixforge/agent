@@ -196,6 +196,10 @@ en el puerto 9100, y muestra `bird.running` y `core_connected` de cada uno. Para
 prod pide escribir `prod` como confirmación (se omite con `--yes` o `-y`). El
 flujo dev -> prod completo está en el repo `core` (`docs/staging.md`).
 
+Para actualizar un IXP en producción entre versiones (los tres repos van en el
+mismo tag), seguir la [guía de actualización](https://github.com/ixforge/core/blob/main/docs/migracion.md)
+del repo `core`.
+
 ## Licencia
 
 Apache 2.0
